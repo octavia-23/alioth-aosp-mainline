@@ -26,6 +26,11 @@ struct ams667xx01 {
 	struct gpio_desc *reset_gpio;
 };
 
+struct ams667xx01_size {
+	u16 hdisplay;
+	u16 vdisplay;
+};
+
 struct panel_desc {
 	unsigned int width_mm;
 	unsigned int height_mm;
@@ -37,6 +42,8 @@ struct panel_desc {
 
 	const struct drm_display_mode *modes;
 	unsigned int num_modes;
+	const struct ams667xx01_size *scaled_sizes;
+	unsigned int num_scaled_sizes;
 	const struct mipi_dsi_device_info dsi_info;
 	int (*init_sequence)(struct ams667xx01 *ctx);
 
@@ -70,7 +77,7 @@ static int ams667xx01_get_current_mode(struct ams667xx01 *ctx)
 	crtc_state = connector->state->crtc->state;
 
 	for (i = 0; i < ctx->desc->num_modes; i++) {
-		if (drm_mode_match(&crtc_state->mode,
+		if (drm_mode_match(&crtc_state->adjusted_mode,
 				   &ctx->desc->modes[i],
 				   DRM_MODE_MATCH_TIMINGS | DRM_MODE_MATCH_CLOCK))
 			return i;
@@ -227,9 +234,17 @@ static const struct drm_display_mode alioth_modes[] = {
 #endif
 };
 
+static const struct ams667xx01_size alioth_scaled_sizes[] = {
+	{ .hdisplay = 900, .vdisplay = 2000 },
+	{ .hdisplay = 720, .vdisplay = 1600 },
+	{ .hdisplay = 540, .vdisplay = 1200 },
+};
+
 static struct drm_dsc_config alioth_dsc_config = {
 	.dsc_version_major = 1,
 	.dsc_version_minor = 1,
+	.pic_width = 1080,
+	.pic_height = 2400,
 	.slice_width = 540,
 	.slice_height = 8,
 	.slice_count = 2,
@@ -241,6 +256,8 @@ static struct drm_dsc_config alioth_dsc_config = {
 static const struct panel_desc alioth_desc = {
 	.modes = alioth_modes,
 	.num_modes = ARRAY_SIZE(alioth_modes),
+	.scaled_sizes = alioth_scaled_sizes,
+	.num_scaled_sizes = ARRAY_SIZE(alioth_scaled_sizes),
 	.dsi_info = {
 		.type = "alioth",
 		.channel = 0,
@@ -368,7 +385,7 @@ static int ams667xx01_get_modes(struct drm_panel *panel,
 {
 	struct ams667xx01 *ctx = to_ams667xx01(panel);
 	struct drm_display_mode *mode;
-	unsigned int i;
+	unsigned int i, j, count = 0;
 
 	for (i = 0; i < ctx->desc->num_modes; i++) {
 		const struct drm_display_mode *m = &ctx->desc->modes[i];
@@ -382,6 +399,22 @@ static int ams667xx01_get_modes(struct drm_panel *panel,
 
 		drm_mode_set_name(mode);
 		drm_mode_probed_add(connector, mode);
+		count++;
+
+		for (j = 0; j < ctx->desc->num_scaled_sizes; j++) {
+			const struct ams667xx01_size *s = &ctx->desc->scaled_sizes[j];
+
+			mode = drm_mode_duplicate(connector->dev, m);
+			if (!mode)
+				return -ENOMEM;
+
+			mode->hdisplay = s->hdisplay;
+			mode->vdisplay = s->vdisplay;
+			mode->type = DRM_MODE_TYPE_DRIVER;
+			drm_mode_set_name(mode);
+			drm_mode_probed_add(connector, mode);
+			count++;
+		}
 	}
 
 	connector->display_info.width_mm = ctx->desc->width_mm;
@@ -389,7 +422,7 @@ static int ams667xx01_get_modes(struct drm_panel *panel,
 	connector->display_info.bpc = ctx->desc->bpc;
 	ctx->connector = connector;
 
-	return ctx->desc->num_modes;
+	return count;
 }
 
 static const struct drm_panel_funcs ams667xx01_panel_funcs = {

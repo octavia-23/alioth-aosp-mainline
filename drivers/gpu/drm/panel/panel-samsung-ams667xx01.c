@@ -165,11 +165,10 @@ static int alioth_init_sequence(struct ams667xx01 *ctx)
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0x5a, 0x5a);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xfc, 0x5a, 0x5a);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb0, 0x16);
-	if (cur_vrefresh == 120 || cur_vrefresh == 60) {
+	if (cur_vrefresh == 144)
+		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xd1, 0x12);
+	else
 		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xd1, 0x2e);
-	} else {
-		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xd1, 0x6e);
-	}
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xfc, 0xa5, 0xa5);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0xa5, 0xa5);
 	mipi_dsi_msleep(&dsi_ctx, 90);
@@ -183,55 +182,51 @@ static int alioth_init_sequence(struct ams667xx01 *ctx)
 					 0x20);
 	mipi_dsi_dcs_set_display_brightness_multi(&dsi_ctx, 0x0000);
 	mipi_dsi_dcs_set_display_on_multi(&dsi_ctx);
-	if (cur_vrefresh == 120 || cur_vrefresh == 90) {
+	if (cur_vrefresh >= 120)
 		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x60, 0x10);
-	} else {
+	else
 		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x60, 0x00);
-	}
 
 	return dsi_ctx.accum_err;
 }
 
 static const struct drm_display_mode alioth_modes[] = {
 	{
-		.clock = (1080 + 16 + 8 + 8) * (2400 + 4 + 4 + 8) * 120 / 1000,
+		.clock = (1080 + 16 + 8 + 8) * (2400 + 1486 + 4 + 8) * 120 / 1000,
 		.hdisplay = 1080,
 		.hsync_start = 1080 + 16,
 		.hsync_end = 1080 + 16 + 8,
 		.htotal = 1080 + 16 + 8 + 8,
 		.vdisplay = 2400,
-		.vsync_start = 2400 + 4,
-		.vsync_end = 2400 + 4 + 4,
-		.vtotal = 2400 + 4 + 4 + 8,
+		.vsync_start = 2400 + 1486,
+		.vsync_end = 2400 + 1486 + 4,
+		.vtotal = 2400 + 1486 + 4 + 8,
 		.type = DRM_MODE_TYPE_DRIVER | DRM_MODE_TYPE_PREFERRED,
 	},
 	{
-		.clock = (1080 + 16 + 8 + 8) * (2400 + 300 + 16 + 280) * 90 / 1000,
+		.clock = (1080 + 16 + 8 + 8) * (2400 + 836 + 4 + 8) * 144 / 1000,
 		.hdisplay = 1080,
 		.hsync_start = 1080 + 16,
 		.hsync_end = 1080 + 16 + 8,
 		.htotal = 1080 + 16 + 8 + 8,
 		.vdisplay = 2400,
-		.vsync_start = 2400 + 300,
-		.vsync_end = 2400 + 300 + 16,
-		.vtotal = 2400 + 300 + 16 + 280,
+		.vsync_start = 2400 + 836,
+		.vsync_end = 2400 + 836 + 4,
+		.vtotal = 2400 + 836 + 4 + 8,
 		.type = DRM_MODE_TYPE_DRIVER,
 	},
-// 60hz mode causes screen flickering
-#if 0
 	{
-		.clock = (1080 + 16 + 8 + 8) * (2400 + 600 + 32 + 560) * 60 / 1000,
+		.clock = (1080 + 16 + 8 + 8) * (2400 + 5384 + 4 + 8) * 60 / 1000,
 		.hdisplay = 1080,
 		.hsync_start = 1080 + 16,
 		.hsync_end = 1080 + 16 + 8,
 		.htotal = 1080 + 16 + 8 + 8,
 		.vdisplay = 2400,
-		.vsync_start = 2400 + 600,
-		.vsync_end = 2400 + 600 + 32,
-		.vtotal = 2400 + 600 + 32 + 560,
+		.vsync_start = 2400 + 5384,
+		.vsync_end = 2400 + 5384 + 4,
+		.vtotal = 2400 + 5384 + 4 + 8,
 		.type = DRM_MODE_TYPE_DRIVER,
 	},
-#endif
 };
 
 static const struct ams667xx01_size alioth_scaled_sizes[] = {

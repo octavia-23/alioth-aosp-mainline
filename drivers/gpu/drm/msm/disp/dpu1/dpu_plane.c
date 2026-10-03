@@ -815,6 +815,22 @@ static int dpu_plane_atomic_check_pipe(struct dpu_plane *pdpu,
 #define MAX_UPSCALE_RATIO	20
 #define MAX_DOWNSCALE_RATIO	4
 
+static void dpu_plane_map_dst_to_output(struct drm_plane_state *new_plane_state,
+					const struct drm_crtc_state *crtc_state)
+{
+	const struct drm_display_mode *mode = &crtc_state->mode;
+	const struct drm_display_mode *adj = &crtc_state->adjusted_mode;
+	struct drm_rect *dst = &new_plane_state->dst;
+
+	if (mode->hdisplay == adj->hdisplay && mode->vdisplay == adj->vdisplay)
+		return;
+
+	dst->x1 = mult_frac(dst->x1, adj->hdisplay, mode->hdisplay);
+	dst->x2 = mult_frac(dst->x2, adj->hdisplay, mode->hdisplay);
+	dst->y1 = mult_frac(dst->y1, adj->vdisplay, mode->vdisplay);
+	dst->y2 = mult_frac(dst->y2, adj->vdisplay, mode->vdisplay);
+}
+
 static int dpu_plane_atomic_check_nosspp(struct drm_plane *plane,
 					 struct drm_plane_state *new_plane_state,
 					 const struct drm_crtc_state *crtc_state)
@@ -842,6 +858,8 @@ static int dpu_plane_atomic_check_nosspp(struct drm_plane *plane,
 	}
 	if (!new_plane_state->visible)
 		return 0;
+
+	dpu_plane_map_dst_to_output(new_plane_state, crtc_state);
 
 	pstate->stage = DPU_STAGE_0 + pstate->base.normalized_zpos;
 	if (pstate->stage >= pdpu->catalog->caps->max_mixer_blendstages) {
@@ -1269,8 +1287,10 @@ static int dpu_plane_virtual_assign_resources(struct drm_crtc *crtc,
 
 	fmt = msm_framebuffer_format(plane_state->fb);
 	reqs.yuv = MSM_FORMAT_IS_YUV(fmt);
-	reqs.scale = (plane_state->src_w >> 16 != plane_state->crtc_w) ||
-		(plane_state->src_h >> 16 != plane_state->crtc_h);
+	reqs.scale = (drm_rect_width(&plane_state->src) >> 16 !=
+		      drm_rect_width(&plane_state->dst)) ||
+		(drm_rect_height(&plane_state->src) >> 16 !=
+		 drm_rect_height(&plane_state->dst));
 
 	reqs.rot90 = drm_rotation_90_or_270(plane_state->rotation);
 
@@ -1514,10 +1534,11 @@ static void dpu_plane_sspp_atomic_update(struct drm_plane *plane,
 		if (!drm_rect_width(&pstate->pipe_cfg[i].src_rect))
 			continue;
 		pstate->plane_fetch_bw += _dpu_plane_calc_bw(pdpu->catalog, fmt,
-							     &crtc->mode, &pstate->pipe_cfg[i]);
+							     &crtc->state->adjusted_mode,
+							     &pstate->pipe_cfg[i]);
 
 		pstate->plane_clk = max(pstate->plane_clk,
-					_dpu_plane_calc_clk(&crtc->mode,
+					_dpu_plane_calc_clk(&crtc->state->adjusted_mode,
 							    &pstate->pipe_cfg[i]));
 	}
 }

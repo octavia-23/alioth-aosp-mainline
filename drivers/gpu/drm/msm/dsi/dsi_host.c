@@ -167,6 +167,8 @@ struct msm_dsi_host {
 	struct drm_display_mode *mode;
 	struct drm_dsc_config *dsc;
 	unsigned int dsc_slice_per_pkt;
+	u16 native_hdisplay;
+	u16 native_vdisplay;
 
 	/* connected device info */
 	unsigned int channel;
@@ -1679,6 +1681,8 @@ static int dsi_host_attach(struct mipi_dsi_host *host,
 		/* for backwards compatibility, assume 1 if not set */
 		if (!msm_host->dsc_slice_per_pkt)
 			msm_host->dsc_slice_per_pkt = 1;
+		msm_host->native_hdisplay = dsi->dsc->pic_width;
+		msm_host->native_vdisplay = dsi->dsc->pic_height;
 	}
 
 	ret = dsi_dev_attach(msm_host->pdev);
@@ -2531,6 +2535,35 @@ int msm_dsi_host_set_display_mode(struct mipi_dsi_host *host,
 	return 0;
 }
 
+static bool dsi_mode_is_scaled(struct msm_dsi_host *msm_host,
+			       const struct drm_display_mode *mode)
+{
+	if (!msm_host->native_hdisplay || !msm_host->native_vdisplay)
+		return false;
+
+	if (mode->hdisplay == msm_host->native_hdisplay &&
+	    mode->vdisplay == msm_host->native_vdisplay)
+		return false;
+
+	return mode->hdisplay < msm_host->native_hdisplay &&
+	       mode->vdisplay < msm_host->native_vdisplay &&
+	       mode->hsync_start >= msm_host->native_hdisplay &&
+	       mode->vsync_start >= msm_host->native_vdisplay;
+}
+
+void msm_dsi_host_fixup_mode(struct mipi_dsi_host *host,
+			     struct drm_display_mode *adjusted_mode)
+{
+	struct msm_dsi_host *msm_host = to_msm_dsi_host(host);
+
+	if (!dsi_mode_is_scaled(msm_host, adjusted_mode))
+		return;
+
+	adjusted_mode->hdisplay = msm_host->native_hdisplay;
+	adjusted_mode->vdisplay = msm_host->native_vdisplay;
+	drm_mode_set_crtcinfo(adjusted_mode, 0);
+}
+
 enum drm_mode_status msm_dsi_host_check_dsc(struct mipi_dsi_host *host,
 					    const struct drm_display_mode *mode)
 {
@@ -2541,6 +2574,11 @@ enum drm_mode_status msm_dsi_host_check_dsc(struct mipi_dsi_host *host,
 
 	if (!msm_host->dsc)
 		return MODE_OK;
+
+	if (dsi_mode_is_scaled(msm_host, mode)) {
+		pic_width = msm_host->native_hdisplay;
+		pic_height = msm_host->native_vdisplay;
+	}
 
 	if (pic_width % dsc->slice_width) {
 		pr_err("DSI: pic_width %d has to be multiple of slice %d\n",

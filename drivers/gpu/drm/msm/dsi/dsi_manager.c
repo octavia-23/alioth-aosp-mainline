@@ -391,6 +391,18 @@ disable_phy:
 	dsi_mgr_phy_disable(id);
 }
 
+static bool dsi_mgr_bridge_mode_fixup(struct drm_bridge *bridge,
+				      const struct drm_display_mode *mode,
+				      struct drm_display_mode *adjusted_mode)
+{
+	int id = dsi_mgr_bridge_get_id(bridge);
+	struct msm_dsi *msm_dsi = dsi_mgr_get_dsi(id);
+
+	msm_dsi_host_fixup_mode(msm_dsi->host, adjusted_mode);
+
+	return true;
+}
+
 static void dsi_mgr_bridge_mode_set(struct drm_bridge *bridge,
 		const struct drm_display_mode *mode,
 		const struct drm_display_mode *adjusted_mode)
@@ -455,8 +467,10 @@ static int dsi_mgr_bridge_attach(struct drm_bridge *bridge,
 
 static const struct drm_bridge_funcs dsi_mgr_bridge_funcs = {
 	.attach = dsi_mgr_bridge_attach,
+	.attach = dsi_mgr_bridge_attach,
 	.pre_enable = dsi_mgr_bridge_pre_enable,
 	.post_disable = dsi_mgr_bridge_post_disable,
+	.mode_fixup = dsi_mgr_bridge_mode_fixup,
 	.mode_set = dsi_mgr_bridge_mode_set,
 	.mode_valid = dsi_mgr_bridge_mode_valid,
 };

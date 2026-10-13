@@ -120,6 +120,10 @@ static DEFINE_XARRAY_ALLOC(qrtr_ports);
  * @nid: node id
  * @qrtr_tx_flow: tree of qrtr_tx_flow, keyed by node << 32 | port
  * @qrtr_tx_lock: lock for qrtr_tx_flow inserts
+ * @hello_sent: hello packet send successful
+ * @hello_rcvd: remote has sent a hello packet
+ * @hello_awaiting: a sent hello packet has not been answered yet
+ * @hello_reply: answer a hello from the remote that was not a reply to ours
  * @rx_queue: receive queue
  * @item: list item for broadcast list
  */
@@ -132,8 +136,14 @@ struct qrtr_node {
 	struct radix_tree_root qrtr_tx_flow;
 	struct mutex qrtr_tx_lock; /* for qrtr_tx_flow */
 
+	bool hello_sent;
+	bool hello_rcvd;
+	bool hello_awaiting;
+	bool hello_reply;
+
 	struct sk_buff_head rx_queue;
 	struct list_head item;
+	struct delayed_work say_hello;
 };
 
 /**
@@ -372,10 +382,16 @@ static int qrtr_node_enqueue(struct qrtr_node *node, struct sk_buff *skb,
 	if (!rc) {
 		mutex_lock(&node->ep_lock);
 		rc = -ENODEV;
+		if (type == QRTR_TYPE_HELLO)
+			WRITE_ONCE(node->hello_awaiting, true);
 		if (node->ep)
 			rc = node->ep->xmit(node->ep, skb);
 		else
 			kfree_skb(skb);
+		if (!rc && type == QRTR_TYPE_HELLO)
+			node->hello_sent = true;
+		if (rc && type == QRTR_TYPE_HELLO)
+			WRITE_ONCE(node->hello_awaiting, false);
 		mutex_unlock(&node->ep_lock);
 	}
 	/* Need to ensure that a subsequent message carries the otherwise lost
@@ -524,6 +540,14 @@ int qrtr_endpoint_post(struct qrtr_endpoint *ep, const void *data, size_t len)
 		qrtr_node_assign(node, le32_to_cpu(pkt->server.node));
 	}
 
+	if (cb->type == QRTR_TYPE_HELLO) {
+		/* Pairs with smp_load_acquire() in qrtr_hello_work() */
+		smp_store_release(&node->hello_rcvd, true);
+		if (!xchg(&node->hello_awaiting, false)) {
+			WRITE_ONCE(node->hello_reply, true);
+			schedule_delayed_work(&node->say_hello, 0);
+		}
+	}
 	if (cb->type == QRTR_TYPE_RESUME_TX) {
 		qrtr_tx_resume(node, skb);
 	} else {
@@ -574,6 +598,81 @@ static struct sk_buff *qrtr_alloc_ctrl_packet(struct qrtr_ctrl_pkt **pkt,
 	return skb;
 }
 
+static void qrtr_hello_work(struct work_struct *work)
+{
+	struct sockaddr_qrtr from = {AF_QIPCRTR, 0, QRTR_PORT_CTRL};
+	struct sockaddr_qrtr to = {AF_QIPCRTR, 0, QRTR_PORT_CTRL};
+	struct qrtr_ctrl_pkt *pkt;
+	struct qrtr_node *node;
+	struct qrtr_sock *ctrl;
+	struct sk_buff *skb;
+	bool hello_sent;
+	int rc = 0;
+
+	node = container_of(to_delayed_work(work), struct qrtr_node, say_hello);
+
+	/* NS must be bound before we can send; retry with backoff if not ready */
+	ctrl = qrtr_port_lookup(QRTR_PORT_CTRL);
+	if (!ctrl) {
+		schedule_delayed_work(&node->say_hello, msecs_to_jiffies(100));
+		return;
+	}
+
+	mutex_lock(&node->ep_lock);
+	hello_sent = node->hello_sent;
+	mutex_unlock(&node->ep_lock);
+
+	from.sq_node = qrtr_local_nid;
+	if (!hello_sent || xchg(&node->hello_reply, false)) {
+		skb = qrtr_alloc_ctrl_packet(&pkt, GFP_KERNEL);
+		if (!skb)
+			goto retry;
+
+		pkt->cmd = cpu_to_le32(QRTR_TYPE_HELLO);
+		to.sq_node = node->nid;
+		if (qrtr_node_enqueue(node, skb, QRTR_TYPE_HELLO, &from, &to))
+			goto out;
+	}
+
+	/* Pairs with smp_store_release() in qrtr_endpoint_post() */
+	if (!smp_load_acquire(&node->hello_rcvd))
+		goto out;
+
+	skb = qrtr_alloc_ctrl_packet(&pkt, GFP_KERNEL);
+	if (!skb)
+		goto retry;
+
+	pkt->cmd = cpu_to_le32(QRTR_TYPE_HELLO);
+	to.sq_node = READ_ONCE(node->nid);
+
+	mutex_lock(&node->ep_lock);
+	if (node->ep)
+		rc = qrtr_local_enqueue(NULL, skb, QRTR_TYPE_HELLO, &to, &from);
+	else
+		kfree_skb(skb);
+	mutex_unlock(&node->ep_lock);
+	if (!rc)
+		goto out;
+
+retry:
+	schedule_delayed_work(&node->say_hello, msecs_to_jiffies(100));
+out:
+	qrtr_port_put(ctrl);
+}
+
+/* Trigger the HELLO handshake after the remote has been reset, eg on resume */
+void qrtr_endpoint_hello(struct qrtr_endpoint *ep)
+{
+	struct qrtr_node *node = ep->node;
+
+	mutex_lock(&node->ep_lock);
+	node->hello_sent = false;
+	mutex_unlock(&node->ep_lock);
+
+	schedule_delayed_work(&node->say_hello, 0);
+}
+EXPORT_SYMBOL_GPL(qrtr_endpoint_hello);
+
 /**
  * qrtr_endpoint_register() - register a new endpoint
  * @ep: endpoint to register
@@ -598,6 +697,11 @@ int qrtr_endpoint_register(struct qrtr_endpoint *ep, unsigned int nid)
 	skb_queue_head_init(&node->rx_queue);
 	node->nid = QRTR_EP_NID_AUTO;
 	node->ep = ep;
+
+	node->hello_sent = false;
+	node->hello_awaiting = false;
+	node->hello_reply = false;
+	INIT_DELAYED_WORK(&node->say_hello, qrtr_hello_work);
 
 	INIT_RADIX_TREE(&node->qrtr_tx_flow, GFP_KERNEL);
 	mutex_init(&node->qrtr_tx_lock);

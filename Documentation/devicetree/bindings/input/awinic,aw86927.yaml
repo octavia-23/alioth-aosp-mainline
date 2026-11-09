@@ -11,7 +11,9 @@ maintainers:
 
 properties:
   compatible:
-    const: awinic,aw86927
+    enum:
+      - awinic,aw8697
+      - awinic,aw86927
 
   reg:
     maxItems: 1

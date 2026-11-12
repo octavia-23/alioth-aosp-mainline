@@ -325,7 +325,7 @@ static const struct dpu_wb_cfg sm8250_wb[] = {
 
 static const struct dpu_perf_cfg sm8250_perf_data = {
 	.max_bw_low = 13700000,
-	.max_bw_high = 16600000,
+	.max_bw_high = 28500000,
 	.min_core_ib = 4800000,
 	.min_llcc_ib = 0,
 	.min_dram_ib = 800000,

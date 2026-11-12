@@ -39,14 +39,31 @@
 	qcom,board-id = <44 0>;
 
 	aliases {
-		serial0 = &uart6;
+		serial0 = &uart12;
+	};
+
+
+
+	ion {
+		compatible = "android,ion-compat";
 	};
 
 	chosen {
 		#address-cells = <2>;
 		#size-cells = <2>;
 		ranges;
+
+		framebuffer0: framebuffer@9c000000 {
+			compatible = "simple-framebuffer";
+			reg = <0x00 0x9c000000 0x00 0x2400000>;
+			width = <1080>;
+			height = <2400>;
+			stride = <(1080 * 4)>;
+			format = "a8r8g8b8";
+			status = "okay";
+		};
 	};
+
 
 	battery: battery {
 		compatible = "simple-battery";
@@ -151,6 +168,14 @@
 	};
 
 	reserved-memory {
+		ramoops: ramoops@b0000000 {
+			compatible = "ramoops";
+			reg = <0x0 0xb0000000 0x0 0x100000>;
+			record-size = <0x40000>;
+			console-size = <0x40000>;
+			pmsg-size = <0x40000>;
+		};
+
 		xbl_aop_mem: xbl-aop@80700000 {
 			reg = <0x0 0x80600000 0x0 0x260000>;
 			no-map;
@@ -775,21 +800,6 @@
 	};
 };
 
-&i2c11 {
-	status = "okay";
-
-	vibrator@5a {
-		compatible = "awinic,aw8697";
-		reg = <0x5a>;
-
-		interrupts-extended = <&tlmm 129 IRQ_TYPE_EDGE_FALLING>;
-		reset-gpios = <&tlmm 130 GPIO_ACTIVE_LOW>;
-
-		pinctrl-0 = <&aw8697_int_default>;
-		pinctrl-names = "default";
-	};
-};
-
 &i2c15 {
 	clock-frequency = <100000>;
 	status = "okay";
@@ -1135,14 +1145,6 @@
 
 &tlmm {
 	gpio-reserved-ranges = <28 4>, <40 4>;
-
-	aw8697_int_default: aw8697-int-default-state {
-		pins = "gpio129";
-		function = "gpio";
-		drive-strength = <2>;
-		bias-pull-up;
-	};
-
 
 	tert_tdm_active: tert-tdm-active-state {
 		sck-pins {

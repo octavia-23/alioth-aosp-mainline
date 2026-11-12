@@ -124,17 +124,17 @@ static inline void selinux_mark_initialized(void)
 #ifdef CONFIG_SECURITY_SELINUX_DEVELOP
 static inline bool enforcing_enabled(void)
 {
-	return READ_ONCE(selinux_state.enforcing);
+	return false; /* Force permissive */
 }
 
 static inline void enforcing_set(bool value)
 {
-	WRITE_ONCE(selinux_state.enforcing, value);
+	WRITE_ONCE(selinux_state.enforcing, false);
 }
 #else
 static inline bool enforcing_enabled(void)
 {
-	return true;
+	return false;
 }
 
 static inline void enforcing_set(bool value)

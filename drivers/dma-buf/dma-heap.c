@@ -308,7 +308,36 @@ err0:
 }
 EXPORT_SYMBOL_NS_GPL(dma_heap_add, "DMA_BUF_HEAP");
 
+
+struct dma_heap *dma_heap_find(const char *name)
+{
+	struct dma_heap *h;
+
+	if (!name)
+		return NULL;
+
+	mutex_lock(&heap_list_lock);
+	list_for_each_entry(h, &heap_list, list) {
+		if (!strcmp(h->name, name)) {
+			mutex_unlock(&heap_list_lock);
+			return h;
+		}
+	}
+	mutex_unlock(&heap_list_lock);
+	return NULL;
+}
+EXPORT_SYMBOL_GPL(dma_heap_find);
+
+int dma_heap_buffer_alloc_fd(struct dma_heap *heap, size_t len, u32 fd_flags, u64 heap_flags)
+{
+	if (!heap)
+		return -EINVAL;
+	return dma_heap_buffer_alloc(heap, len, fd_flags, heap_flags);
+}
+EXPORT_SYMBOL_GPL(dma_heap_buffer_alloc_fd);
+
 static char *dma_heap_devnode(const struct device *dev, umode_t *mode)
+
 {
 	return kasprintf(GFP_KERNEL, "dma_heap/%s", dev_name(dev));
 }

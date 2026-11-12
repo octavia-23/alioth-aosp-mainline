@@ -93,3 +93,11 @@ menuconfig DMABUF_SYSFS_STATS
 source "drivers/dma-buf/heaps/Kconfig"
 
 endmenu
+
+config DMABUF_ION_COMPAT
+	bool "ION Compatibility Driver backed by DMA-BUF Heaps"
+	depends on DMABUF_HEAPS
+	default y
+	help
+	  Provides /dev/ion compatibility interface for legacy Android userspace
+	  allocators (Gralloc), routing allocations to DMA-BUF heaps.

@@ -1,0 +1,32 @@
+From: Akshat Yadav <akshatyadav237@gmail.com>
+Subject: [PATCH] drm/msm/dpu: sm8250: Raise max_bw_high threshold to 28.5 Gbps
+
+On Xiaomi Alioth (POCO F3 / Mi 11X) with a 1080x2400 @ 120Hz display,
+SurfaceFlinger client composition calculates display bandwidth
+exceeding 17.6 Gbps during active UI/wallpaper rendering.
+
+The default SM8250 catalog threshold (16.6 Gbps) causes atomic commits
+to be rejected with -E2BIG (crtc failed performance check -7).
+Raise max_bw_high to 28.5 Gbps to match modern high-throughput targets
+and ensure smooth 120Hz frame composition without dropped frames.
+
+Signed-off-by: Akshat Yadav <akshatyadav237@gmail.com>
+---
+ drivers/gpu/drm/msm/disp/dpu1/catalog/dpu_6_0_sm8250.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/msm/disp/dpu1/catalog/dpu_6_0_sm8250.h b/drivers/gpu/drm/msm/disp/dpu1/catalog/dpu_6_0_sm8250.h
+index 1234567..89abcdef 100644
+--- a/drivers/gpu/drm/msm/disp/dpu1/catalog/dpu_6_0_sm8250.h
++++ b/drivers/gpu/drm/msm/disp/dpu1/catalog/dpu_6_0_sm8250.h
+@@ -325,7 +325,7 @@ static const struct dpu_sspp_sub_blks sm8250_vig_sblk_3 = {
+ 
+ static const struct dpu_perf_cfg sm8250_perf_data = {
+ 	.max_bw_low = 13700000,
+-	.max_bw_high = 16600000,
++	.max_bw_high = 28500000,
+ 	.min_core_ib = 4800000,
+ 	.min_llcc_ib = 0,
+ 	.min_dram_ib = 800000,
+-- 
+2.43.0

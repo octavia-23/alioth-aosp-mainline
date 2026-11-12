@@ -1,0 +1,35 @@
+name: Kernel Build Verification & Auto-Sync
+
+on:
+  push:
+    branches:
+      - 'mainline-*'
+  workflow_dispatch:
+
+jobs:
+  verify-build:
+    name: Test Kernel Compilation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Toolchain & Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential bison flex libssl-dev libelf-dev clang lld llvm device-tree-compiler bc
+
+      - name: Verify alioth_aosp_defconfig Build
+        run: |
+          make ARCH=arm64 LLVM=1 alioth_aosp_defconfig
+          make -j$(nproc) ARCH=arm64 LLVM=1 Image qcom/sm8250-xiaomi-alioth.dtb
+
+      - name: Fast-Forward Sync to Main
+        if: success()
+        run: |
+          git config --global user.name "Akshat Yadav"
+          git config --global user.email "akshatyadav237@gmail.com"
+          git fetch origin main
+          git checkout main
+          git merge --ff-only ${{ github.ref_name }}
+          git push origin main

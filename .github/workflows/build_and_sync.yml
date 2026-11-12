@@ -17,7 +17,7 @@ jobs:
       - name: Install Toolchain & Dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential bison flex libssl-dev libelf-dev clang lld llvm device-tree-compiler bc
+          sudo apt install -y build-essential bison flex libssl-dev libelf-dev clang lld llvm device-tree-compiler bc dwarves pahole libncurses-dev
 
       - name: Verify alioth_aosp_defconfig Build
         run: |

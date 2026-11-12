@@ -707,13 +707,16 @@ static int aw8697_suspend(struct device *dev)
 {
 	struct aw8697_data *haptics = dev_get_drvdata(dev);
 
-	guard(mutex)(&haptics->input_dev->mutex);
+	mutex_lock(&haptics->input_dev->mutex);
 
-	scoped_guard(spinlock_irq, &haptics->input_dev->event_lock)
-		haptics->suspended = true;
+	spin_lock_irq(&haptics->input_dev->event_lock);
+	haptics->suspended = true;
+	spin_unlock_irq(&haptics->input_dev->event_lock);
 
 	if (input_device_enabled(haptics->input_dev))
 		aw8697_halt(haptics);
+
+	mutex_unlock(&haptics->input_dev->mutex);
 
 	return 0;
 }
@@ -722,10 +725,13 @@ static int aw8697_resume(struct device *dev)
 {
 	struct aw8697_data *haptics = dev_get_drvdata(dev);
 
-	guard(mutex)(&haptics->input_dev->mutex);
+	mutex_lock(&haptics->input_dev->mutex);
 
-	scoped_guard(spinlock_irq, &haptics->input_dev->event_lock)
-		haptics->suspended = false;
+	spin_lock_irq(&haptics->input_dev->event_lock);
+	haptics->suspended = false;
+	spin_unlock_irq(&haptics->input_dev->event_lock);
+
+	mutex_unlock(&haptics->input_dev->mutex);
 
 	return 0;
 }

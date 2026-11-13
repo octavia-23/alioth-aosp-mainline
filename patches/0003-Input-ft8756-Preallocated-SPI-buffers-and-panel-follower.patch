@@ -1,0 +1,405 @@
+diff --git a/drivers/input/touchscreen/ft8756.c b/drivers/input/touchscreen/ft8756.c
+index a683343bc..fd3b3f030 100644
+--- a/drivers/input/touchscreen/ft8756.c
++++ b/drivers/input/touchscreen/ft8756.c
+@@ -23,9 +23,11 @@
+ #include <linux/devm-helpers.h>
+ #include <linux/regulator/consumer.h>
+ #include <linux/firmware.h>
++#include <linux/interrupt.h>
++#include <linux/mutex.h>
+ 
+ /* Misc */
+-#define FT8756_NUM_SUPPLIES 3
++#define FT8756_NUM_SUPPLIES 2
+ #define FT8756_MAX_RETRIES	3
+ 
+ #define DATA_CRC_EN 0x20
+@@ -76,53 +78,63 @@ struct ft8756_abs_object {
+ 
+ struct ft8756_ts {
+ 	struct regmap *regmap;
++	struct spi_device *spi;
+ 
+ 	struct input_dev *input;
+ 	struct regulator_bulk_data *supplies;
+ 	struct gpio_desc *reset_gpio;
+ 	struct gpio_desc *irq_gpio;
+ 	int irq;
++	bool irq_enabled;
+ 	struct device *dev;
+ 
+ 	struct touchscreen_properties prop;
+ 	struct ft8756_abs_object abs_obj;
+ 
+ 	struct drm_panel_follower panel_follower;
++
++	struct mutex spi_lock;
++	u8 *spi_tx_buf;
++	u8 *spi_rx_buf;
++	size_t spi_buf_size;
+ };
+ 
+ /*
+- * this function is nearly direct copy from vendor source
++ * Pre-allocated zero-allocation SPI transfer functions
+ */
+ static int ft8756_spi_write(void *dev, const void *data, size_t len)
+ {
+ 	struct spi_device *spi = to_spi_device((struct device *)dev);
+-	int ret;
++	struct ft8756_ts *ts = spi_get_drvdata(spi);
++	int ret = 0;
+ 	u32 datalen = len - 1;
+ 	u32 txlen = 0;
+-	u8 *txBuf = devm_kzalloc(dev, len + 9, GFP_KERNEL);
+-	if (!txBuf)
+-		return -ENOMEM;
+-	u8 *rxBuf = devm_kzalloc(dev, len + 9, GFP_KERNEL);
+-	if (!rxBuf)
++	struct spi_message msg;
++	struct spi_transfer xfer;
++
++	if (!ts || !ts->spi_tx_buf || !ts->spi_rx_buf)
++		return -EINVAL;
++
++	if (len + 9 > ts->spi_buf_size)
+ 		return -ENOMEM;
+ 
+-	txBuf[txlen++] = ((u8*)data)[0];
+-	txBuf[txlen++] = WRITE_CMD;
+-	txBuf[txlen++] = (datalen >> 8) & 0xFF;
+-	txBuf[txlen++] = datalen & 0xFF;
++	mutex_lock(&ts->spi_lock);
++
++	ts->spi_tx_buf[txlen++] = ((u8*)data)[0];
++	ts->spi_tx_buf[txlen++] = WRITE_CMD;
++	ts->spi_tx_buf[txlen++] = (datalen >> 8) & 0xFF;
++	ts->spi_tx_buf[txlen++] = datalen & 0xFF;
+ 
+ 	if (datalen > 0) {
+ 		txlen += 3; // dummy byte
+-		memcpy(&txBuf[txlen], data + 1, datalen);
++		memcpy(&ts->spi_tx_buf[txlen], data + 1, datalen);
+ 		txlen += datalen;
+ 	}
+ 
+-	struct spi_message	msg;
+-	struct spi_transfer xfer = {
+-		.tx_buf = txBuf,
+-		.rx_buf = rxBuf,
+-		.len = txlen,
+-	};
++	memset(&xfer, 0, sizeof(xfer));
++	xfer.tx_buf = ts->spi_tx_buf;
++	xfer.rx_buf = ts->spi_rx_buf;
++	xfer.len = txlen;
+ 
+ 	spi_message_init(&msg);
+ 	spi_message_add_tail(&xfer, &msg);
+@@ -134,51 +146,52 @@ static int ft8756_spi_write(void *dev, const void *data, size_t len)
+ 			usleep_range(CS_HIGH_DELAY, CS_HIGH_DELAY + 100);
+ 			continue;
+ 		}
+-		if ((rxBuf[3] &0xA0) == 0) {
++		if ((ts->spi_rx_buf[3] & 0xA0) == 0) {
+ 			break;
+ 		} else {
+-			dev_err(dev, "Failed to write data status: 0x%X", rxBuf[3]);
++			dev_err(dev, "Failed to write data status: 0x%X", ts->spi_rx_buf[3]);
+ 			ret = -EIO;
+ 			usleep_range(CS_HIGH_DELAY, CS_HIGH_DELAY + 100);
+ 		}
+ 	}
+ 
++	mutex_unlock(&ts->spi_lock);
+ 	usleep_range(CS_HIGH_DELAY, CS_HIGH_DELAY + 100);
+ 	return ret;
+ }
+ 
+-/*
+- * this function is nearly direct copy from vendor source
+-*/
+ static int ft8756_spi_read(void *dev, const void *reg_buf, size_t reg_size, void *val_buf, size_t val_size)
+ {
+ 	struct spi_device *spi = to_spi_device((struct device *)dev);
+-	int ret, i, j;
++	struct ft8756_ts *ts = spi_get_drvdata(spi);
++	int ret = 0, i, j;
+ 	u32 txlen = 0;
+-	u8 *txBuf = devm_kzalloc(dev, 4, GFP_KERNEL);
+-	if (!txBuf)
+-		return -ENOMEM;
+-	u8 *rxBuf = devm_kzalloc(dev, val_size + 9, GFP_KERNEL);
+-	if (!rxBuf)
+-		return -ENOMEM;
+ 	u32 dp = 0;
+ 	u16 crc = 0xFFFF;
++	struct spi_message msg;
++	struct spi_transfer xfer;
+ 
+-	txBuf[txlen++] = ((u8*)reg_buf)[0];
+-	txBuf[txlen++] = READ_CMD;
+-	txBuf[txlen++] = (val_size >> 8) & 0xFF;
+-	txBuf[txlen++] = val_size & 0xFF;
++	if (!ts || !ts->spi_tx_buf || !ts->spi_rx_buf)
++		return -EINVAL;
++
++	if (val_size + 9 > ts->spi_buf_size)
++		return -ENOMEM;
++
++	mutex_lock(&ts->spi_lock);
++
++	ts->spi_tx_buf[txlen++] = ((u8*)reg_buf)[0];
++	ts->spi_tx_buf[txlen++] = READ_CMD;
++	ts->spi_tx_buf[txlen++] = (val_size >> 8) & 0xFF;
++	ts->spi_tx_buf[txlen++] = val_size & 0xFF;
+ 	dp = txlen + 3;
+ 	txlen = dp + val_size;
+-	if(txBuf[1] & DATA_CRC_EN)
++	if(ts->spi_tx_buf[1] & DATA_CRC_EN)
+ 		txlen += 2;
+ 
+-	struct spi_message	msg;
+-	struct spi_transfer xfer = {
+-		.tx_buf = txBuf,
+-		.rx_buf = rxBuf,
+-		.len = txlen,
+-	};
++	memset(&xfer, 0, sizeof(xfer));
++	xfer.tx_buf = ts->spi_tx_buf;
++	xfer.rx_buf = ts->spi_rx_buf;
++	xfer.len = txlen;
+ 
+ 	spi_message_init(&msg);
+ 	spi_message_add_tail(&xfer, &msg);
+@@ -190,15 +203,15 @@ static int ft8756_spi_read(void *dev, const void *reg_buf, size_t reg_size, void
+ 			usleep_range(CS_HIGH_DELAY, CS_HIGH_DELAY + 100);
+ 			continue;
+ 		}
+-		if ((rxBuf[3] & 0xA0) == 0) {
+-			memcpy(val_buf, &rxBuf[dp], val_size);
+-			if(txBuf[1] & DATA_CRC_EN) {
++		if ((ts->spi_rx_buf[3] & 0xA0) == 0) {
++			memcpy(val_buf, &ts->spi_rx_buf[dp], val_size);
++			if(ts->spi_tx_buf[1] & DATA_CRC_EN) {
+ 				for(j = 0; j < (txlen - dp - 2); j++) {
+-					crc ^= rxBuf[dp + j];
++					crc ^= ts->spi_rx_buf[dp + j];
+ 					for(u8 k = 0; k < 8; k++)
+ 						crc = crc & 1 ? (crc >> 1) ^ 0x8408 : crc >> 1;
+ 				}
+-				u16 crc_read = (u16) (rxBuf[txlen - 1] << 8) + rxBuf[txlen - 2];
++				u16 crc_read = (u16) (ts->spi_rx_buf[txlen - 1] << 8) + ts->spi_rx_buf[txlen - 2];
+ 				if (crc != crc_read) {
+ 					dev_err(dev, "crc error: 0x%02x expected, got 0x%02x", crc, crc_read);
+ 					usleep_range(CS_HIGH_DELAY, CS_HIGH_DELAY + 100);
+@@ -207,12 +220,13 @@ static int ft8756_spi_read(void *dev, const void *reg_buf, size_t reg_size, void
+ 			}
+ 			break;
+ 		} else {
+-			dev_err(dev, "Failed to read data status: 0x%X", rxBuf[3]);
++			dev_err(dev, "Failed to read data status: 0x%X", ts->spi_rx_buf[3]);
+ 			ret = -EIO;
+ 			usleep_range(CS_HIGH_DELAY, CS_HIGH_DELAY + 100);
+ 		}
+ 	}
+ 
++	mutex_unlock(&ts->spi_lock);
+ 	usleep_range(CS_HIGH_DELAY, CS_HIGH_DELAY + 100);
+ 	return ret;
+ }
+@@ -237,11 +251,27 @@ static void ft8756_disable_regulators(void *data)
+ static void ft8756_reset(struct ft8756_ts *ts)
+ {
+ 	gpiod_set_value_cansleep(ts->reset_gpio, 0);
+-	msleep(1);
++	msleep(10);
+ 	gpiod_set_value_cansleep(ts->reset_gpio, 1);
+ 	msleep(200);
+ }
+ 
++static void ft8756_enable_irq(struct ft8756_ts *ts)
++{
++	if (!ts->irq_enabled) {
++		enable_irq(ts->irq);
++		ts->irq_enabled = true;
++	}
++}
++
++static void ft8756_disable_irq(struct ft8756_ts *ts)
++{
++	if (ts->irq_enabled) {
++		disable_irq(ts->irq);
++		ts->irq_enabled = false;
++	}
++}
++
+ static int ft8756_check_chip_id(struct ft8756_ts *ts)
+ {
+ 	u16 chip_id = 0;
+@@ -353,11 +383,15 @@ static void ft8756_report(struct ft8756_ts *ts)
+ 		goto exit;
+ 	}
+ 
++	bool valid = false;
+ 	for(i = 0; i < 6; i++) {
+-		if((point[i] != 0xEF && point[i] != 0xFF))
++		if(point[i] != 0xEF && point[i] != 0xFF) {
++			valid = true;
+ 			break;
+-		goto exit;
++		}
+ 	}
++	if (!valid)
++		goto exit;
+ 
+ 	for(i = 0; i < TOUCH_MAX_FINGER_NUM; i++) {
+ 		base = 6 * i;
+@@ -409,12 +443,8 @@ static irqreturn_t ft8756_irq_handler(int irq, void *dev_id)
+ {
+ 	struct ft8756_ts *ts = dev_id;
+ 
+-	disable_irq_nosync(ts->irq);
+-
+ 	ft8756_report(ts);
+ 
+-	enable_irq(ts->irq);
+-
+ 	return IRQ_HANDLED;
+ }
+ 
+@@ -459,10 +489,19 @@ static int ft8756_spi_probe(struct spi_device *spi)
+ 
+ 	/* Set the device-specific data to the allocated structure */
+ 	dev_set_drvdata(dev, ts);
++	spi_set_drvdata(spi, ts);
+ 
+ 	ts->dev = dev;
++	ts->spi = spi;
+ 	ts->irq = spi->irq;
+ 
++	mutex_init(&ts->spi_lock);
++	ts->spi_buf_size = 4096;
++	ts->spi_tx_buf = devm_kzalloc(dev, ts->spi_buf_size, GFP_KERNEL);
++	ts->spi_rx_buf = devm_kzalloc(dev, ts->spi_buf_size, GFP_KERNEL);
++	if (!ts->spi_tx_buf || !ts->spi_rx_buf)
++		return -ENOMEM;
++
+ 	/* Allocate memory for GPIO supplies */
+ 	ts->supplies = devm_kcalloc(dev, FT8756_NUM_SUPPLIES,
+ 					sizeof(*ts->supplies), GFP_KERNEL);
+@@ -494,13 +533,8 @@ static int ft8756_spi_probe(struct spi_device *spi)
+ 
+ 	gpiod_set_consumer_name(ts->irq_gpio, "ft8756 irq");
+ 
+-	/* If the device follows a DRM panel, skip regulator initialization */
+-	if (drm_is_panel_follower(dev))
+-		goto skip_regulators;
+-
+ 	ts->supplies[0].supply = "vio";
+-	ts->supplies[1].supply = "lab";
+-	ts->supplies[2].supply = "ibb";
++	ts->supplies[1].supply = "ibb";
+ 	ret = devm_regulator_bulk_get(dev,
+ 					  FT8756_NUM_SUPPLIES,
+ 					  ts->supplies);
+@@ -520,7 +554,6 @@ static int ft8756_spi_probe(struct spi_device *spi)
+ 	if (ret)
+ 		return ret;
+ 
+-skip_regulators:
+ 	ret = ft8756_check_chip_id(ts);
+ 	if (ret)
+ 		return ret;
+@@ -531,18 +564,21 @@ static int ft8756_spi_probe(struct spi_device *spi)
+ 		return ret;
+ 	}
+ 
+-	/* Request threaded IRQ for touch screen interrupts */
++	/* Request threaded IRQ with FALLING trigger */
+ 	ret = devm_request_threaded_irq(dev, ts->irq, NULL, ft8756_irq_handler,
+-			 IRQ_TYPE_EDGE_RISING | IRQF_ONESHOT, dev_name(dev), ts);
++			 IRQF_TRIGGER_FALLING | IRQF_ONESHOT, dev_name(dev), ts);
+ 	if (ret) {
+ 		dev_err(dev, "request irq failed: %d\n", ret);
+ 		return ret;
+ 	}
++	ts->irq_enabled = true;
+ 
+ 	/* If the device follows a DRM panel, configure panel follower */
+ 	if (drm_is_panel_follower(dev)) {
+ 		ts->panel_follower.funcs = &ft8756_panel_follower_funcs;
+-		devm_drm_panel_add_follower(dev, &ts->panel_follower);
++		ret = devm_drm_panel_add_follower(dev, &ts->panel_follower);
++		if (ret)
++			return dev_err_probe(dev, ret, "failed to add panel follower\n");
+ 	}
+ 
+ 	dev_info(dev, "FT8756 touchscreen initialized\n");
+@@ -554,37 +590,33 @@ static int __maybe_unused ft8756_internal_pm_suspend(struct device *dev)
+ 	struct ft8756_ts *ts = dev_get_drvdata(dev);
+ 	int ret = 0;
+ 
+-	regmap_write(ts->regmap, FT8756_REG_POWER_MODE_SLEEP, FT8756_REG_POWER_MODE_SLEEP);
++	ret = regmap_write(ts->regmap, FT8756_REG_POWER_MODE, FT8756_REG_POWER_MODE_SLEEP);
+ 	if (ret)
+ 		dev_err(ts->dev, "Cannot enter sleep!\n");
+-	return 0;
++	return ret;
+ }
+ 
+ static int __maybe_unused ft8756_pm_suspend(struct device *dev)
+ {
+ 	struct ft8756_ts *ts = dev_get_drvdata(dev);
+-	int ret=0;
+ 
+ 	if (drm_is_panel_follower(dev))
+ 		return 0;
+ 
+-	disable_irq_nosync(ts->irq);
+-
+-	ret = ft8756_internal_pm_suspend(dev);
+-	return ret;
++	ft8756_disable_irq(ts);
++	return ft8756_internal_pm_suspend(dev);
+ }
+ 
+ static int __maybe_unused ft8756_pm_resume(struct device *dev)
+ {
+ 	struct ft8756_ts *ts = dev_get_drvdata(dev);
+-	int ret=0;
+ 
+ 	if (drm_is_panel_follower(dev))
+ 		return 0;
+ 
+-	enable_irq(ts->irq);
+-
+-	return ret;
++	ft8756_reset(ts);
++	ft8756_enable_irq(ts);
++	return 0;
+ }
+ 
+ EXPORT_GPL_SIMPLE_DEV_PM_OPS(ft8756_pm_ops,
+@@ -595,8 +627,8 @@ static int panel_prepared(struct drm_panel_follower *follower)
+ {
+ 	struct ft8756_ts *ts = container_of(follower, struct ft8756_ts, panel_follower);
+ 
+-	enable_irq(ts->irq);
+-
++	ft8756_reset(ts);
++	ft8756_enable_irq(ts);
+ 	return 0;
+ }
+ 
+@@ -604,8 +636,7 @@ static int panel_unpreparing(struct drm_panel_follower *follower)
+ {
+ 	struct ft8756_ts *ts = container_of(follower, struct ft8756_ts, panel_follower);
+ 
+-	disable_irq(ts->irq);
+-
++	ft8756_disable_irq(ts);
+ 	return ft8756_internal_pm_suspend(ts->dev);
+ }
+ 

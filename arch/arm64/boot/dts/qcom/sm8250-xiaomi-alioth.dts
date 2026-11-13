@@ -942,6 +942,8 @@
 
 		vio-supply = <&vreg_l10c_3p0>;
 		ibb-supply = <&vreg_l1c_1p8>;
+
+		panel = <&panel>;
 	};
 };
 
@@ -1109,7 +1111,7 @@
 
 &sound {
 	compatible = "qcom,sm8250-sndcard";
-	model = "xiaomi-alioth";
+	model = "kona-mtp-snd-card";
 	pinctrl-names = "default";
 	pinctrl-0 = <&tert_tdm_active>;
 

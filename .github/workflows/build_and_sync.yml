@@ -6,6 +6,9 @@ on:
       - 'mainline-*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   verify-build:
     name: Test Kernel Compilation
@@ -13,11 +16,13 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Toolchain & Dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential bison flex libssl-dev libelf-dev clang lld llvm device-tree-compiler bc dwarves pahole libncurses-dev
+          sudo apt install -y build-essential bison flex libssl-dev libelf-dev clang lld llvm device-tree-compiler bc dwarves libncurses-dev
 
       - name: Verify alioth_aosp_defconfig Build
         run: |
@@ -30,6 +35,6 @@ jobs:
           git config --global user.name "Akshat Yadav"
           git config --global user.email "akshatyadav237@gmail.com"
           git fetch origin main
-          git checkout main
+          git checkout -B main origin/main
           git merge --ff-only ${{ github.ref_name }}
           git push origin main

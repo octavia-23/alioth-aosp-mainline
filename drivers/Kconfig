@@ -111,6 +111,8 @@ source "drivers/media/Kconfig"
 
 source "drivers/video/Kconfig"
 
+source "drivers/gpu/msm-kgsl/Kconfig"
+
 source "drivers/accel/Kconfig"
 
 source "sound/Kconfig"

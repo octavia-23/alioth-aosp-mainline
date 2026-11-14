@@ -10,6 +10,7 @@
 #include <dt-bindings/media/video-interfaces.h>
 #include <dt-bindings/phy/phy.h>
 #include <dt-bindings/regulator/qcom,rpmh-regulator.h>
+#include <dt-bindings/power/qcom,rpmhpd.h>
 #include <dt-bindings/sound/qcom,q6afe.h>
 #include <dt-bindings/sound/qcom,q6asm.h>
 #include <dt-bindings/usb/pd.h>
@@ -46,6 +47,20 @@
 
 	ion {
 		compatible = "android,ion-compat";
+	};
+
+	alioth_mmcx_hold: alioth-mmcx-hold {
+		compatible = "xiaomi,alioth-mmcx-hold";
+		power-domains = <&rpmhpd SM8250_MMCX>;
+		xiaomi,boot-level = <RPMH_REGULATOR_LEVEL_TURBO>;
+		xiaomi,floor-level = <RPMH_REGULATOR_LEVEL_LOW_SVS>;
+	};
+
+	alioth_dsp_boot: alioth-dsp-boot {
+		compatible = "xiaomi,alioth-dsp-boot";
+		qcom,adsp = <&adsp>;
+		qcom,cdsp = <&cdsp>;
+		qcom,slpi = <&slpi>;
 	};
 
 	chosen {

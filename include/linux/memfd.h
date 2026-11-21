@@ -8,6 +8,10 @@
 
 #ifdef CONFIG_MEMFD_CREATE
 extern long memfd_fcntl(struct file *file, unsigned int cmd, unsigned int arg);
+#ifdef CONFIG_MEMFD_ASHMEM
+long memfd_ashmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
+long memfd_ashmem_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
+#endif
 struct folio *memfd_alloc_folio(struct file *memfd, pgoff_t idx);
 /*
  * Check for any existing seals on mmap, return an error if access is denied due

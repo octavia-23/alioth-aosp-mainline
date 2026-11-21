@@ -5235,6 +5235,26 @@ static const struct address_space_operations shmem_aops = {
 	.error_remove_folio = shmem_error_remove_folio,
 };
 
+#ifdef CONFIG_MEMFD_ASHMEM
+static long shmem_ashmem_ioctl(struct file *file, unsigned int cmd,
+			       unsigned long arg)
+{
+	if (!(SHMEM_I(file_inode(file))->flags & SHMEM_F_MEMFD))
+		return -ENOTTY;
+	return memfd_ashmem_ioctl(file, cmd, arg);
+}
+
+#ifdef CONFIG_COMPAT
+static long shmem_ashmem_compat_ioctl(struct file *file, unsigned int cmd,
+				      unsigned long arg)
+{
+	if (!(SHMEM_I(file_inode(file))->flags & SHMEM_F_MEMFD))
+		return -ENOTTY;
+	return memfd_ashmem_compat_ioctl(file, cmd, arg);
+}
+#endif
+#endif
+
 static const struct file_operations shmem_file_operations = {
 	.mmap_prepare	= shmem_mmap_prepare,
 	.open		= shmem_file_open,
@@ -5247,6 +5267,12 @@ static const struct file_operations shmem_file_operations = {
 	.splice_read	= shmem_file_splice_read,
 	.splice_write	= iter_file_splice_write,
 	.fallocate	= shmem_fallocate,
+#endif
+#ifdef CONFIG_MEMFD_ASHMEM
+	.unlocked_ioctl	= shmem_ashmem_ioctl,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl	= shmem_ashmem_compat_ioctl,
+#endif
 #endif
 };
 

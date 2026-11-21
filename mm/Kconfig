@@ -1329,6 +1329,17 @@ config KMAP_LOCAL_NON_LINEAR_PTE_ARRAY
 config MEMFD_CREATE
 	bool "Enable memfd_create() system call" if EXPERT
 
+config MEMFD_ASHMEM
+	bool "Ashmem ioctl compatibility for memfd"
+	depends on MEMFD_CREATE && SHMEM
+	help
+	  Answer the ashmem ioctls (ASHMEM_GET_SIZE, ASHMEM_GET_NAME,
+	  ASHMEM_SET_PROT_MASK and others) on memfd files. Android 16 and
+	  newer use memfd for ashmem regions only when the kernel provides
+	  this, and fall back to /dev/ashmem otherwise.
+
+	  If unsure, say N.
+
 config SECRETMEM
 	default y
 	bool "Enable memfd_secret() system call" if EXPERT

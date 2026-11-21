@@ -32,6 +32,7 @@ struct swap_iocb;
  * isn't directly visible to userspace.
  */
 #define SHMEM_F_MAPPING_FROZEN	BIT(2)
+#define SHMEM_F_MEMFD		BIT(3)
 
 struct shmem_inode_info {
 	spinlock_t		lock;

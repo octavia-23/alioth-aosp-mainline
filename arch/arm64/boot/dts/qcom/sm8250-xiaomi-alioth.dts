@@ -699,6 +699,36 @@
 		vcc-supply = <&vreg_l5c_1p8>;
 		read-only;
 	};
+	camera@10 {
+		compatible = "samsung,s5k3t2";
+		reg = <0x10>;
+
+		clocks = <&camcc CAM_CC_MCLK3_CLK>;
+		assigned-clocks = <&camcc CAM_CC_MCLK3_CLK>;
+		assigned-clock-rates = <19200000>;
+
+		reset-gpios = <&tlmm 109 GPIO_ACTIVE_LOW>;
+
+		vdda-supply = <&vreg_l5p>;
+		vddd-supply = <&vreg_l1p>;
+		vddio-supply = <&vreg_l5c_1p8>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&cam_s5k3t2_default>;
+
+		power-domains = <&camcc TITAN_TOP_GDSC>;
+
+		orientation = <0>;
+		rotation = <90>;
+
+		port {
+			cam_s5k3t2_ep: endpoint {
+				data-lanes = <1 2 3 4>;
+				link-frequencies = /bits/ 64 <448000000 300000000>;
+				remote-endpoint = <&csiphy4_ep>;
+			};
+		};
+	};
 };
 
 &gmu {

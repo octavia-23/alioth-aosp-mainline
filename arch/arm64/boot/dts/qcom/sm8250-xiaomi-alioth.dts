@@ -1334,6 +1334,7 @@
 
 	bluetooth {
 		compatible = "qcom,qca6390-bt";
+		local-bd-address = [14 e5 e4 ee 00 02];
 		pinctrl-names = "default";
 		pinctrl-0 = <&sw_ctrl>;
 		swctrl-gpios = <&tlmm 124 GPIO_ACTIVE_HIGH>;

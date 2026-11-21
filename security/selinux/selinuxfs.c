@@ -131,6 +131,15 @@ static ssize_t sel_read_enforce(struct file *filp, char __user *buf,
 }
 
 #ifdef CONFIG_SECURITY_SELINUX_DEVELOP
+static bool selinux_lock_permissive __ro_after_init;
+
+static int __init selinux_lock_permissive_setup(char *str)
+{
+	selinux_lock_permissive = true;
+	return 1;
+}
+__setup("selinux_lock_permissive", selinux_lock_permissive_setup);
+
 static ssize_t sel_write_enforce(struct file *file, const char __user *buf,
 				 size_t count, loff_t *ppos)
 
@@ -156,6 +165,8 @@ static ssize_t sel_write_enforce(struct file *file, const char __user *buf,
 		goto out;
 
 	new_value = !!scan_value;
+	if (selinux_lock_permissive)
+		new_value = false;
 
 	old_value = enforcing_enabled();
 	if (new_value != old_value) {

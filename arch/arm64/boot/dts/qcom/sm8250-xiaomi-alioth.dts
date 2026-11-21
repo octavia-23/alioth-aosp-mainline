@@ -215,6 +215,15 @@
 			reg = <0x0 0x8e100000 0x0 0x4600000>;
 			no-map;
 		};
+
+		ramoops@b0000000 {
+			compatible = "ramoops";
+			reg = <0x0 0xb0000000 0x0 0x400000>;
+			record-size = <0x100000>;
+			console-size = <0x100000>;
+			pmsg-size = <0x100000>;
+			no-map;
+		};
 	};
 };
 

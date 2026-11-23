@@ -8,6 +8,7 @@
 
 #ifdef CONFIG_MEMFD_CREATE
 extern long memfd_fcntl(struct file *file, unsigned int cmd, unsigned int arg);
+int memfd_get_seals(struct file *file);
 #ifdef CONFIG_MEMFD_ASHMEM
 long memfd_ashmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 long memfd_ashmem_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
@@ -24,6 +25,10 @@ int memfd_check_seals_mmap(struct file *file, vm_flags_t *vm_flags_ptr);
 struct file *memfd_alloc_file(const char *name, unsigned int flags);
 #else
 static inline long memfd_fcntl(struct file *f, unsigned int c, unsigned int a)
+{
+	return -EINVAL;
+}
+static inline int memfd_get_seals(struct file *file)
 {
 	return -EINVAL;
 }

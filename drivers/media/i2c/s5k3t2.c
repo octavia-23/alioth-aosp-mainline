@@ -977,7 +977,6 @@ static int s5k3t2_disable_streams(struct v4l2_subdev *sd,
 }
 
 static int s5k3t2_set_pad_format(struct v4l2_subdev *sd,
-				 const struct v4l2_subdev_client_info *ci,
 				 struct v4l2_subdev_state *state,
 				 struct v4l2_subdev_format *fmt)
 {
@@ -1042,7 +1041,6 @@ static int s5k3t2_enum_frame_size(struct v4l2_subdev *sd,
 }
 
 static int s5k3t2_get_selection(struct v4l2_subdev *sd,
-				const struct v4l2_subdev_client_info *ci,
 				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_selection *sel)
 {
@@ -1080,7 +1078,7 @@ static int s5k3t2_init_state(struct v4l2_subdev *sd,
 		},
 	};
 
-	return s5k3t2_set_pad_format(sd, NULL, state, &fmt);
+	return s5k3t2_set_pad_format(sd, state, &fmt);
 }
 
 static const struct v4l2_subdev_video_ops s5k3t2_video_ops = {

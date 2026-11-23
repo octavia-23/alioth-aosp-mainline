@@ -517,6 +517,15 @@
 				remote-endpoint = <&cam_imx355_ep>;
 			};
 		};
+
+		port@4 {
+			csiphy4_ep: endpoint {
+				clock-lanes = <7>;
+				data-lanes = <0 1 2 3>;
+				bus-type = <MEDIA_BUS_TYPE_CSI2_DPHY>;
+				remote-endpoint = <&cam_s5k3t2_ep>;
+			};
+		};
 	};
 };
 
@@ -1334,6 +1343,22 @@
 
 		mclk0-pins {
 			pins = "gpio94";
+			function = "cam_mclk";
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+
+	cam_s5k3t2_default: cam-s5k3t2-default-state {
+		rst-pins {
+			pins = "gpio109";
+			function = "gpio";
+			drive-strength = <2>;
+			bias-disable;
+		};
+
+		mclk3-pins {
+			pins = "gpio97";
 			function = "cam_mclk";
 			drive-strength = <2>;
 			bias-disable;

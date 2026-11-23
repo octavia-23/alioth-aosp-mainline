@@ -14,6 +14,7 @@
 #include <linux/module.h>
 #include <linux/skbuff.h>
 #include <linux/slab.h>
+#include <linux/suspend.h>
 #include "internal.h"
 #include "trace.h"
 
@@ -437,6 +438,11 @@ irqreturn_t mhi_irq_handler(int irq_number, void *dev)
 	struct mhi_ring *ev_ring = &mhi_event->ring;
 	dma_addr_t ptr;
 	void *dev_rp;
+
+	if (mhi_cntrl->no_m3 && pm_suspend_in_progress()) {
+		dev_dbg(&mhi_cntrl->mhi_dev->dev, "wakeup from event irq %d\n", irq_number);
+		pm_system_wakeup();
+	}
 
 	/*
 	 * If CONFIG_DEBUG_SHIRQ is set, the IRQ handler will get invoked during __free_irq()

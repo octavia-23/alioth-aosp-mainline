@@ -22,6 +22,7 @@
 
 #include <drm/display/drm_dsc_helper.h>
 #include <drm/drm_of.h>
+#include <drm/drm_panel.h>
 
 #include "dsi.h"
 #include "dsi.xml.h"
@@ -166,6 +167,7 @@ struct msm_dsi_host {
 
 	struct drm_display_mode *mode;
 	struct drm_dsc_config *dsc;
+	struct device_node *panel_node;
 	unsigned int dsc_slice_per_pkt;
 	u16 native_hdisplay;
 	u16 native_vdisplay;
@@ -775,6 +777,36 @@ bool msm_dsi_host_is_wide_bus_enabled(struct mipi_dsi_host *host)
 	return msm_host->dsc &&
 		(msm_host->cfg_hnd->major == MSM_DSI_VER_MAJOR_6G &&
 		 msm_host->cfg_hnd->minor >= MSM_DSI_6G_VER_MINOR_V2_5_0);
+}
+
+static struct drm_panel *dsi_host_refresh_panel(struct msm_dsi_host *msm_host)
+{
+	struct drm_panel *panel;
+
+	if (!msm_host->panel_node || (msm_host->mode_flags & MIPI_DSI_MODE_VIDEO))
+		return NULL;
+
+	panel = of_drm_find_panel(msm_host->panel_node);
+	if (IS_ERR(panel) || !panel->funcs || !panel->funcs->set_refresh)
+		return NULL;
+
+	return panel;
+}
+
+bool msm_dsi_host_can_set_refresh(struct mipi_dsi_host *host)
+{
+	return dsi_host_refresh_panel(to_msm_dsi_host(host)) != NULL;
+}
+
+int msm_dsi_host_set_refresh(struct mipi_dsi_host *host,
+			     const struct drm_display_mode *mode)
+{
+	struct drm_panel *panel = dsi_host_refresh_panel(to_msm_dsi_host(host));
+
+	if (!panel)
+		return -EOPNOTSUPP;
+
+	return panel->funcs->set_refresh(panel, mode);
 }
 
 static void dsi_ctrl_enable(struct msm_dsi_host *msm_host,
@@ -1675,6 +1707,7 @@ static int dsi_host_attach(struct mipi_dsi_host *host,
 	msm_host->lanes = dsi->lanes;
 	msm_host->format = dsi->format;
 	msm_host->mode_flags = dsi->mode_flags;
+	msm_host->panel_node = dsi->dev.of_node;
 	if (dsi->dsc) {
 		msm_host->dsc = dsi->dsc;
 		msm_host->dsc_slice_per_pkt = dsi->dsc_slice_per_pkt;
@@ -1699,6 +1732,7 @@ static int dsi_host_detach(struct mipi_dsi_host *host,
 {
 	struct msm_dsi_host *msm_host = to_msm_dsi_host(host);
 
+	msm_host->panel_node = NULL;
 	dsi_dev_detach(msm_host->pdev);
 
 	DBG("id=%d", msm_host->id);

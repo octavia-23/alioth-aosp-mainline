@@ -65,6 +65,7 @@
 		qcom,micbias2-microvolt = <2750000>;
 		qcom,micbias3-microvolt = <2750000>;
 		qcom,micbias4-microvolt = <2750000>;
+		qcom,mbhc-buttons-vthreshold-microvolt = <75000 150000 237000 500000 500000 500000 500000 500000>;
 		qcom,rx-device = <&wcd_rx>;
 		qcom,tx-device = <&wcd_tx>;
 
@@ -73,11 +74,21 @@
 
 	battery: battery {
 		compatible = "simple-battery";
-		charge-full-design-microamp-hours = <4520000>;
-		energy-full-design-microwatt-hours = <17500000>;
+		charge-full-design-microamp-hours = <5000000>;
+		energy-full-design-microwatt-hours = <19350000>;
 		voltage-min-design-microvolt = <3400000>;
 		voltage-max-design-microvolt = <4450000>;
 		charge-term-current-microamp = <220000>;
+	};
+
+	fingerprint {
+		compatible = "fpc,fpc1540-tee";
+		firmware-name = "qcom/sm8250/xiaomi/alioth/fpcali";
+		qcom,lib-firmware-name = "qcom/sm8250/xiaomi/alioth/cmnlib64";
+		vdd-supply = <&vreg_l13a_3p3>;
+		reset-gpios = <&tlmm 24 GPIO_ACTIVE_LOW>;
+		interrupts-extended = <&tlmm 23 IRQ_TYPE_EDGE_RISING>;
+		memory-region = <&fpc_ta_mem>;
 	};
 
 	gpio_keys: gpio-keys {
@@ -175,8 +186,21 @@
 	};
 
 	reserved-memory {
+		fpc_ta_mem: fpc-ta-region {
+			compatible = "shared-dma-pool";
+			alloc-ranges = <0x0 0x0 0x0 0xffffffff>;
+			reusable;
+			alignment = <0x0 0x400000>;
+			size = <0x0 0x1000000>;
+		};
+
 		xbl_aop_mem: xbl-aop@80700000 {
 			reg = <0x0 0x80600000 0x0 0x260000>;
+			no-map;
+		};
+
+		xbl_uefi_log_mem: memory@80880000 {
+			reg = <0x0 0x80880000 0x0 0x14000>;
 			no-map;
 		};
 
@@ -206,6 +230,11 @@
 			record-size = <0x100000>;
 			console-size = <0x100000>;
 			pmsg-size = <0x100000>;
+			no-map;
+		};
+
+		disp_rdump_mem: memory@b0400000 {
+			reg = <0x0 0xb0400000 0x0 0x200000>;
 			no-map;
 		};
 	};
@@ -533,6 +562,7 @@
 
 &cci0 {
 	status = "okay";
+	vbus-supply = <&vreg_l5c_1p8>;
 };
 
 &cci0_i2c0 {
@@ -643,6 +673,7 @@
 
 &cci1 {
 	status = "okay";
+	vbus-supply = <&vreg_l5c_1p8>;
 };
 
 &cci1_i2c0 {

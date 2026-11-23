@@ -11,6 +11,7 @@
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
+#include <linux/regulator/consumer.h>
 
 #define CCI_HW_VERSION				0x0
 #define CCI_RESET_CMD				0x004
@@ -130,6 +131,7 @@ struct cci {
 	const struct cci_data *data;
 	struct clk_bulk_data *clocks;
 	int nclocks;
+	struct regulator *vbus;
 	struct cci_master master[NUM_MASTERS];
 };
 
@@ -480,6 +482,10 @@ static int __maybe_unused cci_suspend_runtime(struct device *dev)
 	struct cci *cci = dev_get_drvdata(dev);
 
 	cci_disable_clocks(cci);
+
+	if (cci->vbus)
+		regulator_disable(cci->vbus);
+
 	return 0;
 }
 
@@ -488,9 +494,21 @@ static int __maybe_unused cci_resume_runtime(struct device *dev)
 	struct cci *cci = dev_get_drvdata(dev);
 	int ret;
 
+	if (cci->vbus) {
+		ret = regulator_enable(cci->vbus);
+		if (ret)
+			return ret;
+	}
+
 	ret = cci_enable_clocks(cci);
-	if (ret)
+	if (ret) {
+		if (cci->vbus)
+			regulator_disable(cci->vbus);
 		return ret;
+	}
+
+	if (cci->vbus)
+		return cci_reset(cci);
 
 	cci_init(cci);
 	return 0;
@@ -590,9 +608,23 @@ static int cci_probe(struct platform_device *pdev)
 		return dev_err_probe(dev, -EINVAL, "not enough clocks in DT\n");
 	cci->nclocks = ret;
 
+	cci->vbus = devm_regulator_get_optional(dev, "vbus");
+	if (IS_ERR(cci->vbus)) {
+		ret = PTR_ERR(cci->vbus);
+		if (ret != -ENODEV)
+			return dev_err_probe(dev, ret, "failed to get vbus supply\n");
+		cci->vbus = NULL;
+	}
+
+	if (cci->vbus) {
+		ret = regulator_enable(cci->vbus);
+		if (ret)
+			return dev_err_probe(dev, ret, "failed to enable vbus supply\n");
+	}
+
 	ret = cci_enable_clocks(cci);
 	if (ret < 0)
-		return ret;
+		goto disable_vbus;
 
 	/* Interrupt */
 
@@ -650,6 +682,9 @@ error:
 	disable_irq(cci->irq);
 disable_clocks:
 	cci_disable_clocks(cci);
+disable_vbus:
+	if (cci->vbus)
+		regulator_disable(cci->vbus);
 
 	return ret;
 }

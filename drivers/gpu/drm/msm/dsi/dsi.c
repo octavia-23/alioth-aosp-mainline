@@ -17,6 +17,20 @@ struct drm_dsc_config *msm_dsi_get_dsc_config(struct msm_dsi *msm_dsi)
 	return msm_dsi_host_get_dsc_config(msm_dsi->host);
 }
 
+bool msm_dsi_can_set_refresh(struct msm_dsi *msm_dsi)
+{
+	return msm_dsi && msm_dsi_host_can_set_refresh(msm_dsi->host);
+}
+
+int msm_dsi_set_refresh(struct msm_dsi *msm_dsi,
+			const struct drm_display_mode *mode)
+{
+	if (!msm_dsi)
+		return -ENODEV;
+
+	return msm_dsi_host_set_refresh(msm_dsi->host, mode);
+}
+
 bool msm_dsi_wide_bus_enabled(struct msm_dsi *msm_dsi)
 {
 	return msm_dsi_host_is_wide_bus_enabled(msm_dsi->host);

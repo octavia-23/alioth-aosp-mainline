@@ -125,6 +125,9 @@ void msm_dsi_host_snapshot(struct msm_disp_state *disp_state, struct mipi_dsi_ho
 void msm_dsi_host_test_pattern_en(struct mipi_dsi_host *host);
 struct drm_dsc_config *msm_dsi_host_get_dsc_config(struct mipi_dsi_host *host);
 bool msm_dsi_host_is_wide_bus_enabled(struct mipi_dsi_host *host);
+bool msm_dsi_host_can_set_refresh(struct mipi_dsi_host *host);
+int msm_dsi_host_set_refresh(struct mipi_dsi_host *host,
+			     const struct drm_display_mode *mode);
 
 /* dsi phy */
 struct msm_dsi_phy;

@@ -290,6 +290,7 @@ struct fastrpc_user {
 	struct list_head user;
 	struct list_head maps;
 	struct list_head pending;
+	struct list_head interrupted;
 	struct list_head mmaps;
 
 	struct fastrpc_channel_ctx *cctx;
@@ -514,6 +515,36 @@ static void fastrpc_context_put_wq(struct work_struct *work)
 			container_of(work, struct fastrpc_invoke_ctx, put_work);
 
 	fastrpc_context_put(ctx);
+}
+
+static void fastrpc_context_save_interrupted(struct fastrpc_invoke_ctx *ctx)
+{
+	spin_lock(&ctx->fl->lock);
+	list_del(&ctx->node);
+	list_add_tail(&ctx->node, &ctx->fl->interrupted);
+	spin_unlock(&ctx->fl->lock);
+}
+
+static struct fastrpc_invoke_ctx *fastrpc_context_restore_interrupted(
+			struct fastrpc_user *fl, u32 sc)
+{
+	struct fastrpc_invoke_ctx *ctx = NULL, *ictx, *n;
+
+	spin_lock(&fl->lock);
+	list_for_each_entry_safe(ictx, n, &fl->interrupted, node) {
+		if (ictx->pid != current->pid)
+			continue;
+		if (ictx->sc != sc || ictx->fl != fl) {
+			spin_unlock(&fl->lock);
+			return ERR_PTR(-EINVAL);
+		}
+		ctx = ictx;
+		list_del(&ctx->node);
+		list_add_tail(&ctx->node, &fl->pending);
+		break;
+	}
+	spin_unlock(&fl->lock);
+	return ctx;
 }
 
 #define CMP(aa, bb) ((aa) == (bb) ? 0 : (aa) < (bb) ? -1 : 1)
@@ -1183,6 +1214,14 @@ static int fastrpc_internal_invoke(struct fastrpc_user *fl,  u32 kernel,
 		return -EPERM;
 	}
 
+	if (!kernel) {
+		ctx = fastrpc_context_restore_interrupted(fl, sc);
+		if (IS_ERR(ctx))
+			return PTR_ERR(ctx);
+		if (ctx)
+			goto wait;
+	}
+
 	ctx = fastrpc_context_alloc(fl, kernel, sc, args);
 	if (IS_ERR(ctx))
 		return PTR_ERR(ctx);
@@ -1198,6 +1237,7 @@ static int fastrpc_internal_invoke(struct fastrpc_user *fl,  u32 kernel,
 	if (err)
 		goto bail;
 
+wait:
 	if (kernel) {
 		if (!wait_for_completion_timeout(&ctx->work, 10 * HZ))
 			err = -ETIMEDOUT;
@@ -1221,19 +1261,14 @@ static int fastrpc_internal_invoke(struct fastrpc_user *fl,  u32 kernel,
 		goto bail;
 
 bail:
-	if (err != -ERESTARTSYS && err != -ETIMEDOUT) {
+	if (ctx && err == -ERESTARTSYS) {
+		fastrpc_context_save_interrupted(ctx);
+	} else if (ctx && err != -ETIMEDOUT) {
 		/* We are done with this compute context */
 		spin_lock(&fl->lock);
-		list_del(&ctx->node);
+		list_del_init(&ctx->node);
 		spin_unlock(&fl->lock);
 		fastrpc_context_put(ctx);
-	}
-
-	if (err == -ERESTARTSYS) {
-		list_for_each_entry_safe(buf, b, &fl->mmaps, node) {
-			list_del(&buf->node);
-			list_add_tail(&buf->node, &fl->cctx->invoke_interrupted_mmaps);
-		}
 	}
 
 	if (err)
@@ -1548,8 +1583,17 @@ static int fastrpc_device_release(struct inode *inode, struct file *file)
 	struct fastrpc_map *map, *m;
 	struct fastrpc_buf *buf, *b;
 	unsigned long flags;
+	LIST_HEAD(interrupted);
 
 	fastrpc_release_current_dsp_process(fl);
+
+	spin_lock(&fl->lock);
+	list_splice_init(&fl->interrupted, &interrupted);
+	spin_unlock(&fl->lock);
+	list_for_each_entry_safe(ctx, n, &interrupted, node) {
+		list_del_init(&ctx->node);
+		fastrpc_context_put(ctx);
+	}
 
 	spin_lock_irqsave(&cctx->lock, flags);
 	list_del(&fl->user);
@@ -1602,6 +1646,7 @@ static int fastrpc_device_open(struct inode *inode, struct file *filp)
 	spin_lock_init(&fl->lock);
 	mutex_init(&fl->mutex);
 	INIT_LIST_HEAD(&fl->pending);
+	INIT_LIST_HEAD(&fl->interrupted);
 	INIT_LIST_HEAD(&fl->maps);
 	INIT_LIST_HEAD(&fl->mmaps);
 	INIT_LIST_HEAD(&fl->user);
@@ -2344,33 +2389,6 @@ static int fastrpc_rpmsg_probe(struct rpmsg_device *rpdev)
 	secure_dsp = !(of_property_read_bool(rdev->of_node, "qcom,non-secure-domain"));
 	data->secure = secure_dsp;
 
-	switch (domain_id) {
-	case ADSP_DOMAIN_ID:
-	case MDSP_DOMAIN_ID:
-	case SDSP_DOMAIN_ID:
-		/* Unsigned PD offloading is only supported on CDSP and GDSP */
-		data->unsigned_support = false;
-		err = fastrpc_device_register(rdev, data, secure_dsp, domain);
-		if (err)
-			goto err_free_data;
-		break;
-	case CDSP_DOMAIN_ID:
-	case GDSP_DOMAIN_ID:
-		data->unsigned_support = true;
-		/* Create both device nodes so that we can allow both Signed and Unsigned PD */
-		err = fastrpc_device_register(rdev, data, true, domain);
-		if (err)
-			goto err_free_data;
-
-		err = fastrpc_device_register(rdev, data, false, domain);
-		if (err)
-			goto err_deregister_fdev;
-		break;
-	default:
-		err = -EINVAL;
-		goto err_free_data;
-	}
-
 	kref_init(&data->refcount);
 
 	dev_set_drvdata(&rpdev->dev, data);
@@ -2385,7 +2403,34 @@ static int fastrpc_rpmsg_probe(struct rpmsg_device *rpdev)
 
 	err = of_platform_populate(rdev->of_node, NULL, NULL, rdev);
 	if (err)
-		goto err_deregister_fdev;
+		goto err_free_data;
+
+	switch (domain_id) {
+	case ADSP_DOMAIN_ID:
+	case MDSP_DOMAIN_ID:
+	case SDSP_DOMAIN_ID:
+		/* Unsigned PD offloading is only supported on CDSP and GDSP */
+		data->unsigned_support = false;
+		err = fastrpc_device_register(rdev, data, secure_dsp, domain);
+		if (err)
+			goto err_depopulate;
+		break;
+	case CDSP_DOMAIN_ID:
+	case GDSP_DOMAIN_ID:
+		data->unsigned_support = true;
+		/* Create both device nodes so that we can allow both Signed and Unsigned PD */
+		err = fastrpc_device_register(rdev, data, true, domain);
+		if (err)
+			goto err_depopulate;
+
+		err = fastrpc_device_register(rdev, data, false, domain);
+		if (err)
+			goto err_deregister_fdev;
+		break;
+	default:
+		err = -EINVAL;
+		goto err_depopulate;
+	}
 
 	return 0;
 
@@ -2394,6 +2439,9 @@ err_deregister_fdev:
 		misc_deregister(&data->fdevice->miscdev);
 	if (data->secure_fdevice)
 		misc_deregister(&data->secure_fdevice->miscdev);
+
+err_depopulate:
+	of_platform_depopulate(rdev);
 
 err_free_data:
 	kfree(data);
@@ -2406,6 +2454,10 @@ static void fastrpc_notify_users(struct fastrpc_user *user)
 
 	spin_lock(&user->lock);
 	list_for_each_entry(ctx, &user->pending, node) {
+		ctx->retval = -EPIPE;
+		complete(&ctx->work);
+	}
+	list_for_each_entry(ctx, &user->interrupted, node) {
 		ctx->retval = -EPIPE;
 		complete(&ctx->work);
 	}

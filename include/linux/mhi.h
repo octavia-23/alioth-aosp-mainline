@@ -445,6 +445,7 @@ struct mhi_controller {
 	bool bounce_buf;
 	bool fbc_download;
 	bool wake_set;
+	bool no_m3;
 	unsigned long irq_flags;
 	u32 mru;
 };

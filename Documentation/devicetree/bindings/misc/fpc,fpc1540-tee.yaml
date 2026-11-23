@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/misc/fpc,fpc1540-tee.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: FPC1540 fingerprint sensor driven by a QSEE trusted application
+
+maintainers:
+  - Armandas Kvietkus <armandas.kvietkus@proton.me>
+
+description:
+  The FPC1540 is connected to a QUP serial engine that the secure world owns.
+  A QSEE trusted application drives the sensor. Linux powers and resets the
+  sensor, receives the finger interrupt and loads the trusted application.
+
+properties:
+  compatible:
+    const: fpc,fpc1540-tee
+
+  firmware-name:
+    maxItems: 1
+    description: Path of the trusted application, without the .mdt suffix.
+
+  qcom,lib-firmware-name:
+    $ref: /schemas/types.yaml#/definitions/string
+    description: Path of the QSEE common library image, without the .mdt suffix.
+
+  vdd-supply: true
+
+  reset-gpios:
+    maxItems: 1
+
+  interrupts:
+    maxItems: 1
+
+  memory-region:
+    maxItems: 1
+    description: Region used to pass the trusted application image to QSEE.
+
+required:
+  - compatible
+  - firmware-name
+  - vdd-supply
+  - reset-gpios
+  - interrupts
+
+additionalProperties: false
+
+examples:
+  - |
+    #include <dt-bindings/gpio/gpio.h>
+    #include <dt-bindings/interrupt-controller/irq.h>
+
+    fingerprint {
+        compatible = "fpc,fpc1540-tee";
+        firmware-name = "qcom/sm8250/xiaomi/alioth/fpcali";
+        vdd-supply = <&vreg_l13a_3p3>;
+        reset-gpios = <&tlmm 24 GPIO_ACTIVE_LOW>;
+        interrupts-extended = <&tlmm 23 IRQ_TYPE_EDGE_RISING>;
+    };

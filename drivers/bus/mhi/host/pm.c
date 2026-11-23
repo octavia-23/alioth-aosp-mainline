@@ -13,6 +13,7 @@
 #include <linux/mhi.h>
 #include <linux/module.h>
 #include <linux/slab.h>
+#include <linux/suspend.h>
 #include <linux/wait.h>
 #include "internal.h"
 #include "trace.h"
@@ -911,6 +912,24 @@ int mhi_pm_suspend(struct mhi_controller *mhi_cntrl)
 		return -EBUSY;
 	}
 
+	/*
+	 * For devices without M3 support, just set the host state to M3. This
+	 * host transition is needed to prevent the client drivers from
+	 * accessing the device during suspend.
+	 */
+	if (mhi_cntrl->no_m3) {
+		new_state = mhi_tryset_pm_state(mhi_cntrl, MHI_PM_M3);
+		write_unlock_irq(&mhi_cntrl->pm_lock);
+		if (new_state != MHI_PM_M3) {
+			dev_err(dev,
+				"Error setting to PM state: %s from: %s\n",
+				to_mhi_pm_state_str(MHI_PM_M3),
+				to_mhi_pm_state_str(mhi_cntrl->pm_state));
+			return -EIO;
+		}
+		return 0;
+	}
+
 	dev_dbg(dev, "Allowing M3 transition\n");
 	new_state = mhi_tryset_pm_state(mhi_cntrl, MHI_PM_M3_ENTER);
 	if (new_state != MHI_PM_M3_ENTER) {
@@ -969,7 +988,8 @@ static int __mhi_pm_resume(struct mhi_controller *mhi_cntrl, bool force)
 	if (MHI_PM_IN_ERROR_STATE(mhi_cntrl->pm_state))
 		return -EIO;
 
-	if (mhi_get_mhi_state(mhi_cntrl) != MHI_STATE_M3) {
+	if (!mhi_cntrl->no_m3 &&
+	    mhi_get_mhi_state(mhi_cntrl) != MHI_STATE_M3) {
 		dev_warn(dev, "Resuming from non M3 state (%s)\n",
 			 mhi_state_str(mhi_get_mhi_state(mhi_cntrl)));
 		if (!force)
@@ -993,6 +1013,15 @@ static int __mhi_pm_resume(struct mhi_controller *mhi_cntrl, bool force)
 			 to_mhi_pm_state_str(MHI_PM_M3_EXIT),
 			 to_mhi_pm_state_str(mhi_cntrl->pm_state));
 		return -EIO;
+	}
+
+	/*
+	 * For devices without M3 support, just move the host back to M0
+	 * directly.
+	 */
+	if (mhi_cntrl->no_m3) {
+		write_unlock_irq(&mhi_cntrl->pm_lock);
+		return mhi_pm_m0_transition(mhi_cntrl);
 	}
 
 	/* Set MHI to M0 and wait for completion */
@@ -1352,6 +1381,9 @@ void mhi_uevent_notify(struct mhi_controller *mhi_cntrl, enum mhi_ee_type ee)
 	struct device *dev = &mhi_cntrl->mhi_dev->dev;
 	char *buf[2];
 	int ret;
+
+	if (pm_suspend_in_progress())
+		return;
 
 	buf[0] = kasprintf(GFP_KERNEL, "EXEC_ENV=%s", TO_MHI_EXEC_STR(ee));
 	buf[1] = NULL;

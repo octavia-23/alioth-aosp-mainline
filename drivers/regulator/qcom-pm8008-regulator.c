@@ -18,6 +18,11 @@
 #include <asm/byteorder.h>
 
 #define DEFAULT_VOLTAGE_STEPPER_RATE	38400
+#define STARTUP_DELAY_USEC		20
+#define VREG_READY_RETRIES		10
+
+#define LDO_STATUS1_REG			0x08
+#define VREG_READY_BIT			BIT(7)
 
 #define LDO_STEPPER_CTL_REG		0x3b
 #define STEP_RATE_MASK			GENMASK(1, 0)
@@ -99,11 +104,43 @@ static int pm8008_regulator_get_voltage_sel(struct regulator_dev *rdev)
 	return regulator_map_voltage_linear_range(rdev, uV, INT_MAX);
 }
 
+static int pm8008_regulator_enable(struct regulator_dev *rdev)
+{
+	struct pm8008_regulator *preg = rdev_get_drvdata(rdev);
+	unsigned int delay_us, val;
+	int sel, uV, ret;
+
+	sel = pm8008_regulator_get_voltage_sel(rdev);
+	if (sel < 0)
+		return sel;
+
+	uV = regulator_list_voltage_linear_range(rdev, sel);
+	if (uV < 0)
+		return uV;
+
+	ret = regulator_enable_regmap(rdev);
+	if (ret)
+		return ret;
+
+	delay_us = STARTUP_DELAY_USEC + DIV_ROUND_UP(uV, preg->desc.ramp_delay);
+
+	ret = regmap_read_poll_timeout(preg->regmap, preg->base + LDO_STATUS1_REG,
+				       val, val & VREG_READY_BIT, delay_us,
+				       delay_us * VREG_READY_RETRIES);
+	if (ret) {
+		dev_err(rdev_get_dev(rdev), "VREG_READY not set: %d\n", ret);
+		regulator_disable_regmap(rdev);
+		return ret;
+	}
+
+	return 0;
+}
+
 static const struct regulator_ops pm8008_regulator_ops = {
 	.list_voltage		= regulator_list_voltage_linear,
 	.set_voltage_sel	= pm8008_regulator_set_voltage_sel,
 	.get_voltage_sel	= pm8008_regulator_get_voltage_sel,
-	.enable			= regulator_enable_regmap,
+	.enable			= pm8008_regulator_enable,
 	.disable		= regulator_disable_regmap,
 	.is_enabled		= regulator_is_enabled_regmap,
 };

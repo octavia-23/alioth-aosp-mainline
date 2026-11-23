@@ -752,6 +752,66 @@ bool dpu_encoder_needs_modeset(struct drm_encoder *drm_enc, struct drm_atomic_st
 	return false;
 }
 
+static struct msm_dsi *dpu_encoder_refresh_dsi(struct dpu_encoder_virt *dpu_enc)
+{
+	struct msm_drm_private *priv = dpu_enc->base.dev->dev_private;
+
+	if (dpu_enc->disp_info.intf_type != INTF_DSI || !dpu_enc->disp_info.is_cmd_mode)
+		return NULL;
+
+	return priv->kms->dsi[dpu_enc->disp_info.h_tile_instance[0]];
+}
+
+static bool dpu_encoder_refresh_only(const struct drm_display_mode *a,
+				     const struct drm_display_mode *b)
+{
+	return a->hdisplay == b->hdisplay && a->hsync_start == b->hsync_start &&
+	       a->hsync_end == b->hsync_end && a->htotal == b->htotal &&
+	       a->vdisplay == b->vdisplay && a->flags == b->flags &&
+	       drm_mode_vrefresh(a) != drm_mode_vrefresh(b);
+}
+
+static int dpu_encoder_virt_atomic_check(struct drm_encoder *drm_enc,
+					 struct drm_crtc_state *crtc_state,
+					 struct drm_connector_state *conn_state)
+{
+	struct dpu_encoder_virt *dpu_enc = to_dpu_encoder_virt(drm_enc);
+	struct drm_crtc_state *old_crtc_state;
+
+	if (!crtc_state->mode_changed || crtc_state->active_changed ||
+	    crtc_state->connectors_changed || !crtc_state->active)
+		return 0;
+
+	old_crtc_state = drm_atomic_get_old_crtc_state(crtc_state->state,
+						       crtc_state->crtc);
+	if (!old_crtc_state || !old_crtc_state->active ||
+	    !dpu_encoder_refresh_only(&old_crtc_state->mode, &crtc_state->mode))
+		return 0;
+
+	if (!msm_dsi_can_set_refresh(dpu_encoder_refresh_dsi(dpu_enc)))
+		return 0;
+
+	crtc_state->mode_changed = false;
+
+	return 0;
+}
+
+void dpu_encoder_set_refresh(struct drm_encoder *drm_enc,
+			     const struct drm_display_mode *mode)
+{
+	struct dpu_encoder_virt *dpu_enc = to_dpu_encoder_virt(drm_enc);
+	struct msm_dsi *msm_dsi = dpu_encoder_refresh_dsi(dpu_enc);
+	int ret;
+
+	if (!msm_dsi)
+		return;
+
+	ret = msm_dsi_set_refresh(msm_dsi, mode);
+	if (ret)
+		DPU_ERROR_ENC(dpu_enc, "refresh switch to %d Hz failed: %d\n",
+			      drm_mode_vrefresh(mode), ret);
+}
+
 static void _dpu_encoder_update_vsync_source(struct dpu_encoder_virt *dpu_enc,
 			struct msm_display_info *disp_info)
 {
@@ -2739,6 +2799,7 @@ static void dpu_encoder_frame_done_timeout(struct timer_list *t)
 }
 
 static const struct drm_encoder_helper_funcs dpu_encoder_helper_funcs = {
+	.atomic_check = dpu_encoder_virt_atomic_check,
 	.atomic_mode_set = dpu_encoder_virt_atomic_mode_set,
 	.atomic_disable = dpu_encoder_virt_atomic_disable,
 	.atomic_enable = dpu_encoder_virt_atomic_enable,

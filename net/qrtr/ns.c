@@ -210,6 +210,9 @@ static int announce_servers(struct sockaddr_qrtr *sq)
 			if (ret == -ENODEV)
 				continue;
 
+			if (ret == -EAGAIN)
+				return 0;
+
 			pr_err("failed to announce new service\n");
 			return ret;
 		}

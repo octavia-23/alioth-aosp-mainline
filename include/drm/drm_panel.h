@@ -115,6 +115,9 @@ struct drm_panel_funcs {
 	 *
 	 * This function is mandatory.
 	 */
+	int (*set_refresh)(struct drm_panel *panel,
+			   const struct drm_display_mode *mode);
+
 	int (*get_modes)(struct drm_panel *panel,
 			 struct drm_connector *connector);
 

@@ -161,10 +161,7 @@ static int alioth_init_sequence(struct ams667xx01 *ctx)
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0x5a, 0x5a);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xfc, 0x5a, 0x5a);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb0, 0x16);
-	if (cur_vrefresh == 144)
-		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xd1, 0x12);
-	else
-		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xd1, 0x2e);
+	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xd1, 0x2e);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xfc, 0xa5, 0xa5);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0xa5, 0xa5);
 	mipi_dsi_msleep(&dsi_ctx, 90);
@@ -178,7 +175,7 @@ static int alioth_init_sequence(struct ams667xx01 *ctx)
 					 0x20);
 	mipi_dsi_dcs_set_display_brightness_multi(&dsi_ctx, 0x0000);
 	mipi_dsi_dcs_set_display_on_multi(&dsi_ctx);
-	if (cur_vrefresh >= 120)
+	if (cur_vrefresh == 120)
 		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x60, 0x10);
 	else
 		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x60, 0x00);
@@ -188,39 +185,27 @@ static int alioth_init_sequence(struct ams667xx01 *ctx)
 
 static const struct drm_display_mode alioth_modes[] = {
 	{
-		.clock = (1080 + 16 + 8 + 8) * (2400 + 1486 + 4 + 8) * 120 / 1000,
+		.clock = (1080 + 16 + 8 + 8) * (2400 + 1488 + 4 + 8) * 120 / 1000,
 		.hdisplay = 1080,
 		.hsync_start = 1080 + 16,
 		.hsync_end = 1080 + 16 + 8,
 		.htotal = 1080 + 16 + 8 + 8,
 		.vdisplay = 2400,
-		.vsync_start = 2400 + 1486,
-		.vsync_end = 2400 + 1486 + 4,
-		.vtotal = 2400 + 1486 + 4 + 8,
+		.vsync_start = 2400 + 1488,
+		.vsync_end = 2400 + 1488 + 4,
+		.vtotal = 2400 + 1488 + 4 + 8,
 		.type = DRM_MODE_TYPE_DRIVER | DRM_MODE_TYPE_PREFERRED,
 	},
 	{
-		.clock = (1080 + 16 + 8 + 8) * (2400 + 836 + 4 + 8) * 144 / 1000,
+		.clock = (1080 + 16 + 8 + 8) * (2400 + 5388 + 4 + 8) * 60 / 1000 + 1,
 		.hdisplay = 1080,
 		.hsync_start = 1080 + 16,
 		.hsync_end = 1080 + 16 + 8,
 		.htotal = 1080 + 16 + 8 + 8,
 		.vdisplay = 2400,
-		.vsync_start = 2400 + 836,
-		.vsync_end = 2400 + 836 + 4,
-		.vtotal = 2400 + 836 + 4 + 8,
-		.type = DRM_MODE_TYPE_DRIVER,
-	},
-	{
-		.clock = (1080 + 16 + 8 + 8) * (2400 + 5384 + 4 + 8) * 60 / 1000,
-		.hdisplay = 1080,
-		.hsync_start = 1080 + 16,
-		.hsync_end = 1080 + 16 + 8,
-		.htotal = 1080 + 16 + 8 + 8,
-		.vdisplay = 2400,
-		.vsync_start = 2400 + 5384,
-		.vsync_end = 2400 + 5384 + 4,
-		.vtotal = 2400 + 5384 + 4 + 8,
+		.vsync_start = 2400 + 5388,
+		.vsync_end = 2400 + 5388 + 4,
+		.vtotal = 2400 + 5388 + 4 + 8,
 		.type = DRM_MODE_TYPE_DRIVER,
 	},
 };
@@ -303,8 +288,6 @@ static int ams667xx01_prepare(struct drm_panel *panel)
 		return ret;
 	}
 
-	msleep(28);
-
 	ctx->dimming = false;
 	ctx->prepared = true;
 
@@ -325,8 +308,6 @@ static int ams667xx01_enable(struct drm_panel *panel)
 		return ret;
 	}
 
-	usleep_range(10000, 11000);
-
 	drm_dsc_pps_payload_pack(&pps, ctx->desc->dsc);
 
 	ret = mipi_dsi_picture_parameter_set(dsi, &pps);
@@ -335,9 +316,7 @@ static int ams667xx01_enable(struct drm_panel *panel)
 		return ret;
 	}
 
-	msleep(28);
-
-	return ret;
+	return 0;
 }
 
 static int ams667xx01_disable(struct drm_panel *panel)
@@ -361,6 +340,34 @@ static int ams667xx01_disable(struct drm_panel *panel)
 	msleep(120);
 
 	return ret;
+}
+
+static int ams667xx01_set_refresh(struct drm_panel *panel,
+				  const struct drm_display_mode *mode)
+{
+	struct ams667xx01 *ctx = to_ams667xx01(panel);
+	struct mipi_dsi_multi_context dsi_ctx = { .dsi = ctx->dsi };
+	bool high = drm_mode_vrefresh(mode) > 60;
+
+	guard(mutex)(&ctx->lock);
+
+	if (!ctx->prepared)
+		return 0;
+
+	if (high)
+		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x60, 0x10);
+	else
+		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x60, 0x00);
+	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0x5a, 0x5a);
+	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xfc, 0x5a, 0x5a);
+	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb0, 0x16);
+	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xd1, 0x2e);
+	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xfc, 0xa5, 0xa5);
+	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0xa5, 0xa5);
+	if (!high)
+		mipi_dsi_msleep(&dsi_ctx, 12);
+
+	return dsi_ctx.accum_err;
 }
 
 static int ams667xx01_unprepare(struct drm_panel *panel)
@@ -424,6 +431,7 @@ static int ams667xx01_get_modes(struct drm_panel *panel,
 static const struct drm_panel_funcs ams667xx01_panel_funcs = {
 	.prepare = ams667xx01_prepare,
 	.enable = ams667xx01_enable,
+	.set_refresh = ams667xx01_set_refresh,
 	.disable = ams667xx01_disable,
 	.unprepare = ams667xx01_unprepare,
 	.get_modes = ams667xx01_get_modes,

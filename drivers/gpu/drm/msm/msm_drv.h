@@ -304,6 +304,9 @@ bool msm_dsi_is_cmd_mode(struct msm_dsi *msm_dsi);
 bool msm_dsi_is_bonded_dsi(struct msm_dsi *msm_dsi);
 bool msm_dsi_is_master_dsi(struct msm_dsi *msm_dsi);
 bool msm_dsi_wide_bus_enabled(struct msm_dsi *msm_dsi);
+bool msm_dsi_can_set_refresh(struct msm_dsi *msm_dsi);
+int msm_dsi_set_refresh(struct msm_dsi *msm_dsi,
+			const struct drm_display_mode *mode);
 struct drm_dsc_config *msm_dsi_get_dsc_config(struct msm_dsi *msm_dsi);
 const char *msm_dsi_get_te_source(struct msm_dsi *msm_dsi);
 #else
@@ -337,6 +340,17 @@ static inline bool msm_dsi_is_master_dsi(struct msm_dsi *msm_dsi)
 static inline bool msm_dsi_wide_bus_enabled(struct msm_dsi *msm_dsi)
 {
 	return false;
+}
+
+static inline bool msm_dsi_can_set_refresh(struct msm_dsi *msm_dsi)
+{
+	return false;
+}
+
+static inline int msm_dsi_set_refresh(struct msm_dsi *msm_dsi,
+				      const struct drm_display_mode *mode)
+{
+	return -ENODEV;
 }
 
 static inline struct drm_dsc_config *msm_dsi_get_dsc_config(struct msm_dsi *msm_dsi)

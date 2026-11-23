@@ -903,11 +903,22 @@ static void dpu_crtc_atomic_flush(struct drm_crtc *crtc,
 	struct msm_drm_private *priv;
 	unsigned long flags;
 	struct dpu_crtc_state *cstate;
+	struct drm_crtc_state *old_crtc_state;
+	struct drm_encoder *encoder;
 
 	if (!crtc->state->enable) {
 		DRM_DEBUG_ATOMIC("crtc%d -> enable %d, skip atomic_flush\n",
 				crtc->base.id, crtc->state->enable);
 		return;
+	}
+
+	old_crtc_state = drm_atomic_get_old_crtc_state(state, crtc);
+	if (old_crtc_state && crtc->state->active &&
+	    !drm_atomic_crtc_needs_modeset(crtc->state) &&
+	    drm_mode_vrefresh(&old_crtc_state->adjusted_mode) !=
+	    drm_mode_vrefresh(&crtc->state->adjusted_mode)) {
+		drm_for_each_encoder_mask(encoder, crtc->dev, crtc->state->encoder_mask)
+			dpu_encoder_set_refresh(encoder, &crtc->state->adjusted_mode);
 	}
 
 	DRM_DEBUG_ATOMIC("crtc%d\n", crtc->base.id);

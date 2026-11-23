@@ -49,7 +49,7 @@ ls -lh "$RAMDISK_OUT"
 echo "[3/4] Creating boot_alioth_universal.img with mkbootimg..."
 BOOT_OUT="$DIST_DIR/boot_alioth_universal.img"
 
-CMDLINE="console=tty0 clk_ignore_unused pd_ignore_unused panic=5 androidboot.hardware=qcom swiotlb=2048 androidboot.usbcontroller=a600000.dwc3 androidboot.fstab_suffix=qcom androidboot.boot_devices=soc@0/1d84000.ufshc,soc/1d84000.ufshc,1d84000.ufshc firmware_class.path=/vendor/firmware_mnt/image,/vendor/firmware loop.max_part=7 androidboot.selinux=permissive printk.devkmsg=on"
+CMDLINE="console=tty0 clk_ignore_unused pd_ignore_unused panic=5 androidboot.hardware=qcom swiotlb=2048 androidboot.usbcontroller=a600000.dwc3 androidboot.fstab_suffix=qcom androidboot.boot_devices=soc@0/1d84000.ufshc,soc/1d84000.ufshc,1d84000.ufshc firmware_class.path=/vendor/firmware_mnt/image,/vendor/firmware androidboot.super_partition=system loop.max_part=7 androidboot.selinux=permissive printk.devkmsg=on"
 
 mkbootimg \
   --header_version 2 \

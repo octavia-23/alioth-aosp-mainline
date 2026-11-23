@@ -831,10 +831,6 @@ static const struct file_operations fops = {
 		DRIVER_MODESET | \
 		0 )
 
-#ifdef CONFIG_QCOM_KGSL
-int enable_preemption = 0;
-#endif
-
 static const struct drm_driver msm_driver = {
 	.driver_features    = DRIVER_FEATURES_GPU | DRIVER_FEATURES_KMS,
 	.open               = msm_open,

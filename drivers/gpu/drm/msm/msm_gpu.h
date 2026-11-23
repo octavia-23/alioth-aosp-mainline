@@ -707,17 +707,10 @@ msm_gpu_create_private_vm(struct msm_gpu *gpu, struct task_struct *task,
 
 void msm_gpu_cleanup(struct msm_gpu *gpu);
 
-#ifdef CONFIG_QCOM_KGSL
-static inline struct msm_gpu *adreno_load_gpu(struct drm_device *dev) { return NULL; }
-static inline bool adreno_has_gpu(struct device_node *node) { return false; }
-static inline void adreno_register(void) {}
-static inline void adreno_unregister(void) {}
-#else
 struct msm_gpu *adreno_load_gpu(struct drm_device *dev);
 bool adreno_has_gpu(struct device_node *node);
 void __init adreno_register(void);
 void __exit adreno_unregister(void);
-#endif
 
 static inline void msm_submitqueue_put(struct msm_gpu_submitqueue *queue)
 {

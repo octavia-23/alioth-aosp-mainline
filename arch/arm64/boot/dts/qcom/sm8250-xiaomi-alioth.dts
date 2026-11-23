@@ -10,7 +10,6 @@
 #include <dt-bindings/media/video-interfaces.h>
 #include <dt-bindings/phy/phy.h>
 #include <dt-bindings/regulator/qcom,rpmh-regulator.h>
-#include <dt-bindings/power/qcom,rpmhpd.h>
 #include <dt-bindings/sound/qcom,q6afe.h>
 #include <dt-bindings/sound/qcom,q6asm.h>
 #include <dt-bindings/usb/pd.h>
@@ -40,34 +39,45 @@
 	qcom,board-id = <44 0>;
 
 	aliases {
-		serial0 = &uart12;
+		serial0 = &uart6;
 	};
-
-
 
 	chosen {
 		#address-cells = <2>;
 		#size-cells = <2>;
 		ranges;
-
-		framebuffer0: framebuffer@9c000000 {
-			compatible = "simple-framebuffer";
-			reg = <0x00 0x9c000000 0x00 0x2400000>;
-			width = <1080>;
-			height = <2400>;
-			stride = <(1080 * 4)>;
-			format = "a8r8g8b8";
-			status = "okay";
-		};
 	};
 
+	wcd938x: audio-codec {
+		compatible = "qcom,wcd9380-codec";
+
+		pinctrl-0 = <&wcd_reset_n_default>;
+		pinctrl-names = "default";
+
+		reset-gpios = <&tlmm 32 GPIO_ACTIVE_LOW>;
+
+		vdd-buck-supply = <&vreg_s4a_1p8>;
+		vdd-rxtx-supply = <&vreg_s4a_1p8>;
+		vdd-io-supply = <&vreg_s4a_1p8>;
+		vdd-mic-bias-supply = <&vreg_bob>;
+
+		qcom,micbias1-microvolt = <2750000>;
+		qcom,micbias2-microvolt = <2750000>;
+		qcom,micbias3-microvolt = <2750000>;
+		qcom,micbias4-microvolt = <2750000>;
+		qcom,rx-device = <&wcd_rx>;
+		qcom,tx-device = <&wcd_tx>;
+
+		#sound-dai-cells = <1>;
+	};
 
 	battery: battery {
 		compatible = "simple-battery";
 		charge-full-design-microamp-hours = <4520000>;
 		energy-full-design-microwatt-hours = <17500000>;
 		voltage-min-design-microvolt = <3400000>;
-		voltage-max-design-microvolt = <4460000>;
+		voltage-max-design-microvolt = <4450000>;
+		charge-term-current-microamp = <220000>;
 	};
 
 	gpio_keys: gpio-keys {
@@ -165,14 +175,6 @@
 	};
 
 	reserved-memory {
-		ramoops: ramoops@b0000000 {
-			compatible = "ramoops";
-			reg = <0x0 0xb0000000 0x0 0x100000>;
-			record-size = <0x40000>;
-			console-size = <0x40000>;
-			pmsg-size = <0x40000>;
-		};
-
 		xbl_aop_mem: xbl-aop@80700000 {
 			reg = <0x0 0x80600000 0x0 0x260000>;
 			no-map;
@@ -409,7 +411,7 @@
 
 		vreg_l3c_1p2: ldo3 {
 			regulator-name = "vreg_l3c_1p2";
-			regulator-min-microvolt = <800000>;
+			regulator-min-microvolt = <1200000>;
 			regulator-max-microvolt = <1200000>;
 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
 		};
@@ -474,7 +476,7 @@
 
 // SD870 additional cpu frequency
 &cpu7_opp_table {
-	cpu7_opp21: opp-3187200000 {
+	cpu7_opp22: opp-3187200000 {
 		opp-hz = /bits/ 64 <3187200000>;
 		opp-peak-kBps = <8368000 51609600>;
 	};
@@ -560,7 +562,7 @@
 		assigned-clocks = <&camcc CAM_CC_MCLK0_CLK>;
 		assigned-clock-rates = <19200000>;
 
-		reset-gpios = <&tlmm 93 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&tlmm 93 GPIO_ACTIVE_LOW>;
 
 		vio-supply = <&vreg_l5c_1p8>;
 		vana-supply = <&vreg_l7p>;
@@ -570,6 +572,8 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&cam_imx582_default>;
 
+		power-domains = <&camcc TITAN_TOP_GDSC>;
+
 		orientation = <1>;
 		rotation = <270>;
 
@@ -578,7 +582,7 @@
 		port {
 			cam_imx582_ep: endpoint {
 				data-lanes = <1 2 3 4>;
-				link-frequencies = /bits/ 64 <720000000>;
+				link-frequencies = /bits/ 64 <597600000 357900000>;
 				remote-endpoint = <&csiphy1_ep>;
 			};
 		};
@@ -620,6 +624,8 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&cam_s5k5e9_default>;
 
+		power-domains = <&camcc TITAN_TOP_GDSC>;
+
 		orientation = <1>;
 		rotation = <270>;
 
@@ -628,7 +634,7 @@
 		port {
 			cam_s5k5e9_ep: endpoint {
 				data-lanes = <1 2>;
-				link-frequencies = /bits/ 64 <480000000>;
+				link-frequencies = /bits/ 64 <438400000>;
 				remote-endpoint = <&csiphy0_ep>;
 			};
 		};
@@ -658,14 +664,16 @@
 		assigned-clocks = <&camcc CAM_CC_MCLK2_CLK>;
 		assigned-clock-rates = <19200000>;
 
-		reset-gpios = <&tlmm 78 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&tlmm 78 GPIO_ACTIVE_LOW>;
 
-		vio-supply = <&vreg_l5c_1p8>;
-		vana-supply = <&vreg_l3p>;
-		vdig-supply = <&vreg_l3c_1p2>;
+		dovdd-supply = <&vreg_l5c_1p8>;
+		avdd-supply = <&vreg_l3p>;
+		dvdd-supply = <&vreg_l3c_1p2>;
 
 		pinctrl-names = "default";
 		pinctrl-0 = <&cam_imx355_default>;
+
+		power-domains = <&camcc TITAN_TOP_GDSC>;
 
 		orientation = <1>;
 		rotation = <270>;
@@ -681,8 +689,6 @@
 };
 
 &cci1_i2c1 {
-	/* DPHY S5K3T2 @ 0x10 */
-
 	s5k3t2_eeprom: eeprom@51 {
 		compatible = "puya,p24c64f",
 			     "atmel,24c64";
@@ -690,6 +696,7 @@
 		vcc-supply = <&vreg_l5c_1p8>;
 		read-only;
 	};
+
 	camera@10 {
 		compatible = "samsung,s5k3t2";
 		reg = <0x10>;
@@ -845,6 +852,21 @@
 	};
 };
 
+&i2c11 {
+	status = "okay";
+
+	vibrator@5a {
+		compatible = "awinic,aw8697";
+		reg = <0x5a>;
+
+		interrupts-extended = <&tlmm 129 IRQ_TYPE_EDGE_FALLING>;
+		reset-gpios = <&tlmm 130 GPIO_ACTIVE_LOW>;
+
+		pinctrl-0 = <&aw8697_int_default>;
+		pinctrl-names = "default";
+	};
+};
+
 &i2c15 {
 	clock-frequency = <100000>;
 	status = "okay";
@@ -940,6 +962,12 @@
 	};
 };
 
+&intc {
+	mbi-alias = <0x0 0x17a10000>;
+	mbi-ranges = <864 32>;
+	msi-controller;
+};
+
 &spi2 {
 	status = "okay";
 	pinctrl-names = "default";
@@ -987,8 +1015,6 @@
 
 		vio-supply = <&vreg_l10c_3p0>;
 		ibb-supply = <&vreg_l1c_1p8>;
-
-		panel = <&panel>;
 	};
 };
 
@@ -1017,6 +1043,26 @@
 		vddpcie0p9-supply = <&vreg_pmu_pcie_0p9>;
 		vddpcie1p8-supply = <&vreg_pmu_pcie_1p8>;
 	};
+};
+
+&pcie2 {
+	msi-parent = <&intc>;
+	pinctrl-0 = <&pcie2_default_state &mdm2ap_default &ap2mdm_default>;
+	pinctrl-names = "default";
+	status = "okay";
+
+	pcie@0 {
+		modem@0 {
+			compatible = "pci17cb,0306";
+			reg = <0x10000 0x0 0x0 0x0 0x0>;
+		};
+	};
+};
+
+&pcie2_phy {
+	vdda-phy-supply = <&vreg_l5a_0p88>;
+	vdda-pll-supply = <&vreg_l9a_1p2>;
+	status = "okay";
 };
 
 &pm8150_gpios {
@@ -1144,27 +1190,71 @@
 	dai@0 {
 		reg = <0>;
 	};
+
+	dai@1 {
+		reg = <MSM_FRONTEND_DAI_MULTIMEDIA2>;
+		direction = <Q6ASM_DAI_TX>;
+	};
+};
+
+&rxmacro {
+	status = "okay";
+};
+
+&swr1 {
+	status = "okay";
+
+	wcd_rx: codec@0,4 {
+		compatible = "sdw20217010d00";
+		reg = <0 4>;
+		qcom,rx-port-mapping = <1 2 3 4 5>;
+	};
+};
+
+&swr2 {
+	status = "okay";
+
+	wcd_tx: codec@0,3 {
+		compatible = "sdw20217010d00";
+		reg = <0 3>;
+		qcom,tx-port-mapping = <2 3 4 5>;
+	};
+};
+
+&txmacro {
+	status = "okay";
 };
 
 &vamacro {
-	status = "disabled";
-};
-
-&lpass_tlmm {
-	status = "disabled";
+	qcom,dmic-sample-rate = <600000>;
 };
 
 &sound {
 	compatible = "qcom,sm8250-sndcard";
-	model = "kona-mtp-snd-card";
+	model = "xiaomi-alioth";
 	pinctrl-names = "default";
 	pinctrl-0 = <&tert_tdm_active>;
+
+	audio-routing = "AMIC1", "MIC BIAS1",
+			"AMIC5", "MIC BIAS4",
+			"TX SWR_ADC0", "ADC1_OUTPUT",
+			"TX SWR_ADC1", "ADC2_OUTPUT",
+			"TX SWR_ADC2", "ADC3_OUTPUT",
+			"TX SWR_ADC3", "ADC4_OUTPUT";
 
 	mm1-dai-link {
 		link-name = "MultiMedia1";
 
 		cpu {
 			sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA1>;
+		};
+	};
+
+	mm2-dai-link {
+		link-name = "MultiMedia2";
+
+		cpu {
+			sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA2>;
 		};
 	};
 
@@ -1181,6 +1271,22 @@
 
 		codec {
 			sound-dai = <&cs35l41_rcv 0>, <&cs35l41_lcv 0>;
+		};
+	};
+
+	wcd-capture-dai-link {
+		link-name = "WCD Capture";
+
+		cpu {
+			sound-dai = <&q6afedai TX_CODEC_DMA_TX_3>;
+		};
+
+		codec {
+			sound-dai = <&wcd938x 1>, <&swr2 0>, <&txmacro 0>;
+		};
+
+		platform {
+			sound-dai = <&q6routing>;
 		};
 	};
 };
@@ -1232,6 +1338,31 @@
 			drive-strength = <16>;
 			output-low;
 			bias-pull-up;
+		};
+	};
+
+	mdm2ap_default: mdm2ap-default-state {
+		pins = "gpio1", "gpio3";
+		function = "gpio";
+		drive-strength = <8>;
+		bias-disable;
+	};
+
+	ap2mdm_default: ap2mdm-default-state {
+		status-pins {
+			pins = "gpio56";
+			function = "gpio";
+			drive-strength = <16>;
+			bias-disable;
+			output-high;
+		};
+
+		errfatal-pins {
+			pins = "gpio57";
+			function = "gpio";
+			drive-strength = <16>;
+			bias-disable;
+			output-low;
 		};
 	};
 
@@ -1363,6 +1494,20 @@
 			drive-strength = <2>;
 			bias-disable;
 		};
+	};
+
+	aw8697_int_default: aw8697-int-default-state {
+		pins = "gpio129";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-pull-up;
+	};
+
+	wcd_reset_n_default: wcd-reset-n-default-state {
+		pins = "gpio32";
+		function = "gpio";
+		drive-strength = <16>;
+		bias-disable;
 	};
 };
 

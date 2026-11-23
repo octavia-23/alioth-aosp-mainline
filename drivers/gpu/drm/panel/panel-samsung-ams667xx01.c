@@ -5,6 +5,7 @@
 #include <linux/delay.h>
 #include <linux/gpio/consumer.h>
 #include <linux/module.h>
+#include <linux/mutex.h>
 #include <linux/of.h>
 #include <linux/regulator/consumer.h>
 
@@ -24,6 +25,9 @@ struct ams667xx01 {
 	const struct panel_desc *desc;
 	struct regulator_bulk_data supplies[2];
 	struct gpio_desc *reset_gpio;
+	struct mutex lock;
+	bool prepared;
+	bool dimming;
 };
 
 struct ams667xx01_size {
@@ -125,19 +129,11 @@ static int alioth_init_sequence(struct ams667xx01 *ctx)
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0xa5, 0xa5);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0x5a, 0x5a);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb0, 0x02);
-	if (cur_vrefresh == 120 || cur_vrefresh == 60) {
-		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xec, 0x00, 0xc0, 0xc3, 0x43);
-	} else {
-		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xec, 0x00, 0xc2, 0xc2, 0x42);
-	}
+	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xec, 0x00, 0xc0, 0xc3, 0x43);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb0, 0x0d);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xec, 0x19);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb0, 0x06);
-	if (cur_vrefresh == 120 || cur_vrefresh == 60) {
-		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xe4, 0xd0);
-	} else {
-		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xe4, 0x10);
-	}
+	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xe4, 0xd0);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0xa5, 0xa5);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0x5a, 0x5a);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb0, 0x36);
@@ -174,7 +170,7 @@ static int alioth_init_sequence(struct ams667xx01 *ctx)
 	mipi_dsi_msleep(&dsi_ctx, 90);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0x5a, 0x5a);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb0, 0x06);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb7, 0x20);
+	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb7, 0x10);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb0, 0x05);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb7, 0x93);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0, 0xa5, 0xa5);
@@ -258,13 +254,12 @@ static const struct panel_desc alioth_desc = {
 		.channel = 0,
 		.node = NULL,
 	},
-	.width_mm = 75,
-	.height_mm = 160,
+	.width_mm = 70,
+	.height_mm = 155,
 	.bpc = 8,
 	.lanes = 4,
 	.format = MIPI_DSI_FMT_RGB888,
-	.mode_flags = MIPI_DSI_MODE_VIDEO_BURST | MIPI_DSI_CLOCK_NON_CONTINUOUS |
-				MIPI_DSI_MODE_LPM,
+	.mode_flags = MIPI_DSI_CLOCK_NON_CONTINUOUS | MIPI_DSI_MODE_LPM,
 	.init_sequence = alioth_init_sequence,
 	.dsc = &alioth_dsc_config,
 };
@@ -275,6 +270,8 @@ static int ams667xx01_prepare(struct drm_panel *panel)
 	struct device *dev = &ctx->dsi->dev;
 	struct drm_dsc_picture_parameter_set pps;
 	int ret;
+
+	guard(mutex)(&ctx->lock);
 
 	ret = regulator_bulk_enable(ARRAY_SIZE(ctx->supplies), ctx->supplies);
 	if (ret < 0) {
@@ -307,6 +304,9 @@ static int ams667xx01_prepare(struct drm_panel *panel)
 	}
 
 	msleep(28);
+
+	ctx->dimming = false;
+	ctx->prepared = true;
 
 	return 0;
 }
@@ -344,9 +344,7 @@ static int ams667xx01_disable(struct drm_panel *panel)
 {
 	struct ams667xx01 *ctx = to_ams667xx01(panel);
 	struct mipi_dsi_device *dsi = ctx->dsi;
-	struct mipi_dsi_multi_context dsi_ctx = { .dsi = ctx->dsi };
-
-    int ret;
+	int ret;
 
 	ret = mipi_dsi_dcs_set_display_off(dsi);
 	if (ret < 0)
@@ -354,7 +352,7 @@ static int ams667xx01_disable(struct drm_panel *panel)
 
 	msleep(20);
 
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, MIPI_DCS_WRITE_CONTROL_DISPLAY, 0x20);
+	mipi_dsi_dcs_write(dsi, MIPI_DCS_WRITE_CONTROL_DISPLAY, (u8[]){0x20}, 1);
 
 	ret = mipi_dsi_dcs_enter_sleep_mode(dsi);
 	if (ret < 0)
@@ -369,6 +367,9 @@ static int ams667xx01_unprepare(struct drm_panel *panel)
 {
 	struct ams667xx01 *ctx = to_ams667xx01(panel);
 
+	guard(mutex)(&ctx->lock);
+
+	ctx->prepared = false;
 	gpiod_set_value_cansleep(ctx->reset_gpio, 1);
 	regulator_bulk_disable(ARRAY_SIZE(ctx->supplies), ctx->supplies);
 
@@ -431,18 +432,28 @@ static const struct drm_panel_funcs ams667xx01_panel_funcs = {
 static int ams667xx01_bl_update_status(struct backlight_device *bl)
 {
 	struct mipi_dsi_device *dsi = bl_get_data(bl);
+	struct ams667xx01 *ctx = mipi_dsi_get_drvdata(dsi);
 	u16 brightness = backlight_get_brightness(bl);
 	int ret;
+
+	guard(mutex)(&ctx->lock);
+
+	if (!ctx->prepared)
+		return 0;
 
 	dsi->mode_flags &= ~MIPI_DSI_MODE_LPM;
 
 	ret = mipi_dsi_dcs_set_display_brightness_large(dsi, brightness);
-	if (ret < 0)
-		return ret;
+	if (ret >= 0 && brightness && !ctx->dimming) {
+		ret = mipi_dsi_dcs_write(dsi, MIPI_DCS_WRITE_CONTROL_DISPLAY,
+					 (u8[]){ 0x28 }, 1);
+		if (ret >= 0)
+			ctx->dimming = true;
+	}
 
 	dsi->mode_flags |= MIPI_DSI_MODE_LPM;
 
-	return 0;
+	return ret < 0 ? ret : 0;
 }
 
 static const struct backlight_ops ams667xx01_bl_ops = {
@@ -469,9 +480,11 @@ static int ams667xx01_probe(struct mipi_dsi_device *dsi)
 	struct ams667xx01 *ctx;
 	int ret;
 
-	ctx = devm_kzalloc(dev, sizeof(*ctx), GFP_KERNEL);
-	if (!ctx)
-		return -ENOMEM;
+	ctx = devm_drm_panel_alloc(dev, struct ams667xx01, panel,
+				   &ams667xx01_panel_funcs,
+				   DRM_MODE_CONNECTOR_DSI);
+	if (IS_ERR(ctx))
+		return PTR_ERR(ctx);
 
 	ctx->supplies[0].supply = "vddio";
 	ctx->supplies[1].supply = "vci";
@@ -489,11 +502,13 @@ static int ams667xx01_probe(struct mipi_dsi_device *dsi)
 	if (!ctx->desc)
 		return -ENODEV;
 
+	ret = devm_mutex_init(dev, &ctx->lock);
+	if (ret)
+		return ret;
+
 	ctx->dsi = dsi;
 	mipi_dsi_set_drvdata(dsi, ctx);
 
-	drm_panel_init(&ctx->panel, dev, &ams667xx01_panel_funcs,
-			   DRM_MODE_CONNECTOR_DSI);
 	ctx->panel.prepare_prev_first = true;
 
 	ctx->panel.backlight = ams667xx01_create_backlight(dsi);

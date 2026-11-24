@@ -791,7 +791,6 @@ static void imx582_update_pad_format(struct imx582 *imx582,
 
 static int
 imx582_set_pad_format(struct v4l2_subdev *sd,
-			const struct v4l2_subdev_client_info *ci,
 			struct v4l2_subdev_state *sd_state,
 			struct v4l2_subdev_format *fmt)
 {
@@ -861,7 +860,7 @@ static int imx582_init_state(struct v4l2_subdev *sd,
 	fmt.format.code = imx582_get_format_code(imx582);
 	mutex_unlock(&imx582->mutex);
 
-	return imx582_set_pad_format(sd, NULL, sd_state, &fmt);
+	return imx582_set_pad_format(sd, sd_state, &fmt);
 }
 
 static int imx582_set_ctrl(struct v4l2_ctrl *ctrl)
@@ -976,7 +975,6 @@ static int imx582_enum_frame_size(struct v4l2_subdev *sd,
 }
 
 static int imx582_get_selection(struct v4l2_subdev *sd,
-				const struct v4l2_subdev_client_info *ci,
 				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_selection *sel)
 {
